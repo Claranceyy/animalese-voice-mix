@@ -1,4 +1,4 @@
-# Animalese Voice Mix
+# Animalese Voice Mix 动森狸语合成
 
 [![Code License: MIT](https://img.shields.io/badge/Code-MIT-52B788.svg)](./LICENSE)
 [![Voice Assets: Apache-2.0](https://img.shields.io/badge/Assets-Apache--2.0-EE9B4B.svg)](./THIRD_PARTY_NOTICES.md)
@@ -11,14 +11,14 @@
 
 ## 核心算法架构
 
-从输入任意中 / 日 / 英混排文本到生成连续音频波形，核心管线依次经过四个解耦阶段：
+从输入的文本到生成连续音频波形，核心管线思路；
 
 ```text
  文字源
         │
         ▼
  Step1：三语语境路由与音韵拆解（Tokenizer）
-    ├─ 分句语种判别：检测分句内假名特征自动归属中日汉字读音，隔离跨语种同形字干扰
+    ├─ 中日语种判别：检测分句内假名特征自动归属中日汉字读音。
     ├─ 中文分支（zh）：查表映射汉字拼音与 1~4 声调/轻声，将语法虚词标记为可优先舍弃的弱读单元（weak）
     ├─ 英文分支（en）：基于 1.6 万词美式音标词典切分真实音节并提取主重音，未登录词按元音核与辅音丛规则拼读
     └─ 日文分支（ja）：最长前缀匹配将汉字词转为平假名音拍，处理拗音合并、助词音变（は→wa / へ→e）、长音与促音留白，并求解文节高低音拍核
