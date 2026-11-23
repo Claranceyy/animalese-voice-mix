@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Animalese Voice Mix - Minimal Example</title>
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; max-width: 580px; margin: 48px auto; padding: 0 16px; color: #222; line-height: 1.6; }
+      textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 15px; margin: 12px 0; border-radius: 8px; border: 1px solid #ccc; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+      button { padding: 8px 16px; font-size: 14px; cursor: pointer; border-radius: 6px; border: 1px solid #bbb; background: #fff; }
+      #dialog { min-height: 48px; padding: 12px 14px; background: #f6f4ee; border-radius: 8px; margin-top: 14px; font-size: 16px; }
+    </style>
+  </head>
+  <body>
+    <h2>Animalese Voice Mix 最小调用示例</h2>
+    <p>先在项目根目录执行 <code>npm install &amp;&amp; npm run build</code>，再通过任意本地静态服务器（如 <code>npx vite</code> 或 VS Code Live Server）打开本页。</p>
+
+    <textarea id="input" rows="3">你好呀！今日は天気がいいですね！Hello Island, welcome to Animalese Voice Mix!</textarea>
+    <div class="actions">
+      <button id="speakBtn" type="button">播放采样语音（0% 混音）</button>
+      <button id="hybridBtn" type="button">双核混音（50% 混音）</button>
+      <button id="synthBtn" type="button">纯数学共振峰（100% 合成）</button>
+      <button id="stopBtn" type="button">停止</button>
+    </div>
+    <div id="dialog">等待播放，也可直接在上方输入框边打字边发声...</div>
+
+    <script type="module">
+      import { AnimaleseEngine } from "../dist/animalese-voice-mix.js";
+
+      const engine = new AnimaleseEngine();
+      const input = document.querySelector("#input");
+      const dialog = document.querySelector("#dialog");
+
+      const assetsReady = engine.loadTrilingualAssets("../speech").catch(() => null);
+
+      async function speak(mixRatio) {
+        await assetsReady;
+        engine.configure({
+          mixRatio,
+          basePitchHz: 515,
+          unitsPerSecond: 10.0,
+          typingSpeed: 0.6,
+        });
+        const text = input.value;
+        dialog.textContent = "";
+        await engine.playText(text, new Map(), {
+          onRevealChar: (_idx, shownCount) => {
+            dialog.textContent = text.slice(0, shownCount);
+          },
+        });
+      }
+
+      input.addEventListener("focus", () => {
+        engine.resetLiveStream();
+      });
+
+      input.addEventListener("input", async () => {
+        await assetsReady;
+        await engine.feedLiveText(input.value);
+        dialog.textContent = input.value;
+      });
+
+      document.querySelector("#speakBtn").addEventListener("click", () => speak(0.0));
+      document.querySelector("#hybridBtn").addEventListener("click", () => speak(0.5));
+      document.querySelector("#synthBtn").addEventListener("click", () => speak(1.0));
+      document.querySelector("#stopBtn").addEventListener("click", () => engine.stop());
+    </script>
+  </body>
+</html>

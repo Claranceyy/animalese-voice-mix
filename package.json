@@ -1,19 +1,21 @@
 {
   "name": "animalese-voice-mix",
   "version": "1.0.0",
-  "description": "Zero-dependency trilingual (ZH/JA/EN) Animal-Crossing-style prosody synthesis algorithm & Web Audio engine with dual-clock lag shedding, 8-point pitch contours, and Sample ↔ Formant voice mixing.",
+  "description": "轻量、低延迟、零第三方运行时依赖的中/日/英三语仿动森狸语实时语音合成与韵律控制算法（Web Audio 采样切片 + 共振峰双核引擎）。",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Claranceyy/animalese-voice-mix.git"
   },
-  "homepage": "https://github.com/Claranceyy/animalese-voice-mix#readme",
+  "homepage": "https://clarance.top/apps/animalese-voice-mix",
   "keywords": [
     "animalese",
+    "animal-crossing",
     "web-audio",
     "prosody",
     "speech-synthesis",
+    "formant-synthesis",
     "formant",
     "mandarin",
     "japanese",
@@ -33,6 +35,7 @@
     "dist",
     "speech",
     "src",
+    "examples",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "README.md"

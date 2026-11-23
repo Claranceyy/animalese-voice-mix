@@ -9,7 +9,7 @@ All bundled voice bank audio sprites and trilingual pronunciation lexicons in `s
 ## 1. Trilingual Syllable Sprite Banks (`speech/{zh,en,ja}.{ogg,json}`)
 
 - **Mandarin (`zh.ogg`, 407 units)**: Generated via [`scripts/build-voice-bank.py`](./scripts/build-voice-bank.py) using **[Kokoro-82M v1.1-zh](https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh)** (`zf_001`) + **[sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx)** (**Apache-2.0**).
-- **English (`en.ogg`, 401 units) & Native Japanese (`ja.ogg`, 110 morae)**: Generated via [`scripts/build-voice-bank.py`](./scripts/build-voice-bank.py) using **[Kokoro-82M v1.0](https://huggingface.co/hexgrad/Kokoro-82M)** (`af_heart` for English, `jf_alpha` for native Japanese) via `kokoro-onnx` (**Apache-2.0** / **MIT**).
+- **English (`en.ogg`, 525 units) & Native Japanese (`ja.ogg`, 115 morae)**: Generated via [`scripts/build-voice-bank.py`](./scripts/build-voice-bank.py) using **[Kokoro-82M v1.0](https://huggingface.co/hexgrad/Kokoro-82M)** (`af_heart` for English, `jf_alpha` for native Japanese) via `kokoro-onnx` (**Apache-2.0** / **MIT**).
 - All banks are pitch-flattened to `364 Hz` and time-compressed cleanly via Praat PSOLA (`praat-parselmouth`).
 
 ## 2. Trilingual Pronunciation Lexicons (`speech/{zh,en,ja}-lexicon.json`)

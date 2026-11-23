@@ -2,13 +2,79 @@
 
 [![Code License: MIT](https://img.shields.io/badge/Code-MIT-52B788.svg)](./LICENSE)
 [![Voice Assets: Apache-2.0](https://img.shields.io/badge/Assets-Apache--2.0-EE9B4B.svg)](./THIRD_PARTY_NOTICES.md)
-[![Zero Dependencies](https://img.shields.io/badge/Runtime%20Deps-0-3178C6.svg)](#)
+![Zero Dependencies](https://img.shields.io/badge/Runtime%20Deps-0-3178C6.svg)
 [![在线预览: clarance.top](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E9%A2%84%E8%A7%88-clarance.top-38BDF8.svg)](https://clarance.top/app-sandbox/animalese-voice-mix/index.html)
 
 
-## 简介:模仿《动物森友》狸语风格的语音合成算法，轻量，低延迟，流式文本，支持自动识别中/日/英。支持流式文字与实时打字生成。
+## 简介:模仿《动物森友会》狸语风格的语音合成算法，轻量，低延迟，流式文本，支持自动识别中/日/英。支持流式文字与实时打字生成。
 
 - **在线体验**：[https://clarance.top/apps/animalese-voice-mix](https://clarance.top/apps/animalese-voice-mix)
+
+---
+
+## 快速上手与调用方式
+
+### 1. 安装依赖与编译打包
+
+仓库已内置压制好的三语声库与读音词表（位于 `./speech` 目录，共约 `1.8 MB`），直接构建即可生成浏览器可用的零依赖 ESM 模块 `./dist/animalese-voice-mix.js`：
+
+```bash
+npm install
+npm run build
+npm test
+```
+
+构建完成后，可通过任意静态服务器打开 [`examples/minimal.html`](./examples/minimal.html) 直接试听演播模式与实时打字模式。
+
+### 2. 最小调用代码
+
+```ts
+import { AnimaleseEngine } from "./dist/animalese-voice-mix.js";
+
+const engine = new AnimaleseEngine();
+
+// 加载内置中/日/英三语声库与读音词表（若不加载也可设 mixRatio: 1 使用纯数学共振峰合成）
+await engine.loadTrilingualAssets("./speech");
+
+// 配置声线与韵律参数
+engine.configure({
+  basePitchHz: 515,     // 角色基准音高（Hz）
+  unitsPerSecond: 10.0, // 最大发音速率（音节/秒）
+  typingSpeed: 0.6,     // 文本打字机揭示倍率
+  toneAmount: 0.62,     // 声调与语调起伏幅度
+  mixRatio: 0.0,        // 0 = 纯采样切片，0.5 = 等功率双核混音，1 = 纯数学共振峰
+});
+
+// 方式 A：整段台词按双时钟打字机同步演播
+const text = "你好呀！今日は天気がいいですね！Hello Island!";
+await engine.playText(text, new Map(), {
+  onRevealChar: (_charIndex, shownCount) => {
+    dialogEl.textContent = text.slice(0, shownCount);
+  },
+});
+
+// 方式 B：输入框或大模型流式输出边出字边发声
+engine.resetLiveStream();
+await engine.feedLiveText("正在流式追加的文本...");
+```
+
+### 3. 核心可调参数（`ProsodyConfig`）
+
+| 参数名 | 默认值 | 取值范围 | 功能说明 |
+| :--- | :--- | :--- | :--- |
+| `basePitchHz` | `515` | `180 – 650` | 角色基础嗓音高度；数值越高声线越幼态清亮，越低越沉稳 |
+| `unitsPerSecond` | `10.0` | `5 – 22` | 每秒最多触发的音节数量上限，防止高密度叠音糊成噪音 |
+| `typingSpeed` | `0.6` | `0.4 – 2.5` | 对话框文字逐字显示的速度倍率 |
+| `toneAmount` | `0.62` | `0 – 1.4` | 中文四声拐弯与句调起伏的弯曲强度（`0` 为平调） |
+| `stressSemitones` | `1.0` | `0 – 3.0` | 重读音节相对普通音节额外抬升的半音高度 |
+| `maxLag` | `0.75` | `0.15 – 2.0` | 语音落后于文字光标的容忍秒数，超限自动按轻重分级吞略虚词 |
+| `mixRatio` | `0.0` | `0.0 – 1.0` | 采样声库（`0`）与纯数学共振峰合成器（`1`）的等功率混合比例 |
+| `warmthHz` | `9500` | `1200 – 14000` | 总线低通滤波截止频率，调低可柔化高频齿音、营造温暖听感 |
+| `volume` | `0.84` | `0.0 – 1.0` | 主输出音量增益 |
+| `languageMode` | `"auto"` | `"auto" \| "zh" \| "ja" \| "en"` | 语种识别模式；`auto` 按分句特征自动区分中日同形汉字 |
+| `rawDry` | `false` | `boolean` | 设为 `true` 时旁路全部变调与滤波，以 `1:1` 播放 `364Hz` 原始平直切片 |
+
+---
 
 
 ## 核心算法架构
@@ -124,6 +190,8 @@ animalese-voice-mix/
 │   ├── zh-lexicon.json       # 汉字至拼音与声调映射表
 │   ├── en-lexicon.json       # 常用英语词至音节与主重音映射表
 │   └── ja-lexicon.json       # 日语常用汉字词组与单字假名读音映射表
+├── examples/
+│   └── minimal.html          # 开箱即用的最小单页演播与流式打字调用示例
 ├── scripts/                  # 离线声库与词典生成脚本
 │   ├── build-voice-bank.py   # 基于 Kokoro + Praat PSOLA 生成 364Hz 平直三语精灵库
 │   └── build-lexicons.py     # 基于开源词典构建英/日前端读音映射表
