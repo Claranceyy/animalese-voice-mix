@@ -5,11 +5,12 @@
 [![Zero Dependencies](https://img.shields.io/badge/Runtime%20Deps-0-3178C6.svg)](#)
 [![在线预览](https://clarance.top/app-sandbox/animalese-voice-mix/index.html)](#)
 
+---
+
 ## 模仿《动物森友》狸语风格的语音合成算法，轻量，低延迟，流式文本，支持自动识别中/日/英。
 
 
 ---
-
 ## 核心算法架构
 
 从输入的文本到生成连续音频波形，核心管线思路；
