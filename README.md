@@ -1,4 +1,4 @@
-# Animalese Voice Mix 动森狸语合成
+# Animalese Voice Mix 更好的仿动森狸语语音合成
 
 [![Code License: MIT](https://img.shields.io/badge/Code-MIT-52B788.svg)](./LICENSE)
 [![Voice Assets: Apache-2.0](https://img.shields.io/badge/Assets-Apache--2.0-EE9B4B.svg)](./THIRD_PARTY_NOTICES.md)
