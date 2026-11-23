@@ -1,0 +1,81 @@
+import type { ProsodyConfig, VoicePreset } from "./types";
+
+export const DEFAULT_CONFIG: ProsodyConfig = {
+  basePitchHz: 515,
+  unitsPerSecond: 15.2,
+  typingSpeed: 1.15,
+  toneAmount: 0.62,
+  stressSemitones: 1.0,
+  maxLag: 0.75,
+  mixRatio: 0.0,
+  warmthHz: 9500,
+  volume: 0.84,
+  rawDry: false,
+};
+
+export const VOICE_PRESETS: readonly VoicePreset[] = [
+  {
+    id: "sunny-helper",
+    name: "岛务小秘书",
+    enName: "Sunny Secretary",
+    description: "基准音高 515Hz，高语速与较大声调起伏，适合清脆元气角色。",
+    config: {
+      basePitchHz: 515,
+      unitsPerSecond: 15.2,
+      typingSpeed: 1.15,
+      toneAmount: 0.62,
+      maxLag: 0.75,
+      mixRatio: 0.0,
+      warmthHz: 9500,
+      rawDry: false,
+    },
+  },
+  {
+    id: "uncle-nook",
+    name: "沉稳狸老板",
+    enName: "Cozy Tanuki",
+    description: "基准音高 245Hz，慢语速配合 3200Hz 低通暖度滤波与少量共振峰底色。",
+    config: {
+      basePitchHz: 245,
+      unitsPerSecond: 10.2,
+      typingSpeed: 0.88,
+      toneAmount: 0.34,
+      maxLag: 1.0,
+      mixRatio: 0.12,
+      warmthHz: 3200,
+      rawDry: false,
+    },
+  },
+  {
+    id: "half-blend",
+    name: "蜂蜜双核混音",
+    enName: "Honey Hybrid",
+    description: "采样切片与三路并联共振峰合成器按等功率曲线 50/50 融合。",
+    config: {
+      basePitchHz: 448,
+      unitsPerSecond: 13.8,
+      typingSpeed: 1.0,
+      toneAmount: 0.5,
+      maxLag: 0.85,
+      mixRatio: 0.5,
+      warmthHz: 6000,
+      rawDry: false,
+    },
+  },
+  {
+    id: "raw-dry",
+    name: "纯原声对比",
+    enName: "Raw OGG Dry",
+    description: "旁路全部语调曲线、变调与滤波，以 1:1 原始倍速直出 364Hz 平直切片。",
+    config: {
+      basePitchHz: 364,
+      unitsPerSecond: 11.0,
+      typingSpeed: 0.95,
+      toneAmount: 0.0,
+      maxLag: 1.2,
+      mixRatio: 0.0,
+      warmthHz: 14000,
+      rawDry: true,
+    },
+  },
+];

@@ -1,0 +1,52 @@
+{
+  "name": "animalese-voice-mix",
+  "version": "1.0.0",
+  "description": "Zero-dependency trilingual (ZH/JA/EN) Animal-Crossing-style prosody synthesis algorithm & Web Audio engine with dual-clock lag shedding, 8-point pitch contours, and Sample ↔ Formant voice mixing.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Claranceyy/animalese-voice-mix.git"
+  },
+  "homepage": "https://github.com/Claranceyy/animalese-voice-mix#readme",
+  "keywords": [
+    "animalese",
+    "web-audio",
+    "prosody",
+    "speech-synthesis",
+    "formant",
+    "mandarin",
+    "japanese",
+    "typescript",
+    "game-audio"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/animalese-voice-mix.js"
+    }
+  },
+  "main": "./dist/animalese-voice-mix.js",
+  "module": "./dist/animalese-voice-mix.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "speech",
+    "src",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build": "vite build && tsc -p tsconfig.build.json --emitDeclarationOnly"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.0",
+    "vitest": "^3.1.1"
+  }
+}
