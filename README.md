@@ -6,7 +6,7 @@
 [![在线预览: clarance.top](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E9%A2%84%E8%A7%88-clarance.top-38BDF8.svg)](https://clarance.top/app-sandbox/animalese-voice-mix/index.html)
 
 
-## 简介:模仿《动物森友》狸语风格的语音合成算法，轻量，低延迟，流式文本，支持自动识别中/日/英。
+## 简介:模仿《动物森友》狸语风格的语音合成算法，轻量，低延迟，流式文本，支持自动识别中/日/英。支持流式文字与实时打字生成。
 
 - **在线应用体验地址**：[https://clarance.top/apps/animalese-voice-mix](https://clarance.top/apps/animalese-voice-mix)
 
