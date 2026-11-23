@@ -1,6 +1,6 @@
 import { WebAudioPipeline } from "./audio/audioPipeline";
 import { VoiceBankStore } from "./audio/bankStore";
-import { VoiceClock, textRevealSteps } from "./clock";
+import { EN_CODA_RATE_SCALE, JA_MORA_RATE_SCALE, VoiceClock, textRevealSteps } from "./clock";
 import { DEFAULT_CONFIG } from "./presets";
 import { solvePitchContour } from "./prosody";
 import { tokenizeSpeech } from "./tokenizer";
@@ -218,7 +218,8 @@ export class AnimaleseEngine {
       while (acc >= 1 && shown < text.length) {
         const charIdx = shown++;
         const ch = text[charIdx];
-        acc -= textRevealSteps(ch);
+        const charUnits = byAt.get(charIdx);
+        acc -= textRevealSteps(ch, charUnits);
 
         const audioNow = Math.max(startAudioTime, ctx.currentTime + 0.02);
         const elapsedSec = Math.max(0, audioNow - startAudioTime);
@@ -233,7 +234,6 @@ export class AnimaleseEngine {
           });
         }
 
-        const charUnits = byAt.get(charIdx);
         if (charUnits) {
           for (const u of charUnits) {
             this.placeAndScheduleUnit(u, overrides.get(u.id), audioNow, startAudioTime, elapsedSec, callbacks);
@@ -354,7 +354,12 @@ export class AnimaleseEngine {
     const decision = this.clock.place(audioNow, u, {
       weak: isWeak,
       isPhraseFinal: u.isPhraseFinal,
-      unitsPerSecond: !this.config.rawDry && u.bank === "ja" ? this.config.unitsPerSecond * 1.22 : this.config.unitsPerSecond,
+      unitsPerSecond:
+        !this.config.rawDry && u.bank === "en" && u.key.startsWith("_")
+          ? this.config.unitsPerSecond * EN_CODA_RATE_SCALE
+          : !this.config.rawDry && u.bank === "ja"
+            ? this.config.unitsPerSecond * JA_MORA_RATE_SCALE
+            : this.config.unitsPerSecond,
       durationSec: contour.durationSec,
       maxLag: this.config.maxLag,
       preGapSec: u.preGapSec,

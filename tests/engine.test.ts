@@ -213,10 +213,10 @@ describe("ProsodyTokenizer", () => {
     expect(jaSeq).toContain("ki");
     expect(jaSeq).toContain("ne");
     expect(jaSeq).toContain("ko");
-    // Sokuon っ inside 一緒 emits preGapSec=0.055 on sho instead of "tsu"
+    // Sokuon っ inside 一緒 emits preGapSec=0.048 on sho instead of "tsu"
     expect(jaSeq).not.toContain("tsu");
     const shoUnit = jaUnits.find((u) => u.key === "sho");
-    expect(shoUnit?.preGapSec).toBeCloseTo(0.055, 3);
+    expect(shoUnit?.preGapSec).toBeCloseTo(0.048, 3);
     // Japanese pitch accent produces varied low / rise / drop contour roles, and polite tail す stays dropped (not rising!)
     expect(jaUnits.some((u) => u.jaAccent === "low")).toBe(true);
     expect(jaUnits.some((u) => u.jaAccent === "rise")).toBe(true);
@@ -224,15 +224,31 @@ describe("ProsodyTokenizer", () => {
     const suUnit = jaUnits.find((u) => u.surface === "す");
     expect(suUnit?.jaAccent).toBe("drop");
 
-    // こんにちは / こんばんは pronounce trailing は as "wa"
-    const greetJa = tokenizeSpeech("こんにちは！わたしはねこです。", {
+    // こんにちは / こんばんは pronounce trailing は as "wa" and keep internal に intact (not split as particle)
+    const greetJa = tokenizeSpeech("こんにちは！こねこです。", {
       lexicon,
       jaLexicon,
       languageMode: "auto",
       validKeysByBank: { zh: validKeys, en: enKeys, ja: jaKeys },
     });
     expect(greetJa.slice(0, 5).map((u) => u.key)).toEqual(["ko", "n", "ni", "chi", "wa"]);
-    expect(greetJa.slice(5, 9).map((u) => u.key)).toEqual(["wa", "ta", "shi", "wa"]);
+    expect(greetJa[2].jaAccent).not.toBe("drop");
+    expect(greetJa[4].jaAccent).toBe("drop");
+    // こねこ stays one cohesive word (`ね` is not misclassified as sentence-final particle)
+    expect(greetJa.slice(5, 8).map((u) => u.key)).toEqual(["ko", "ne", "ko"]);
+    expect(greetJa[6].jaAccent).not.toBe("drop");
+
+    // Conjugated verb stems (飲もう -> のもう) & punctuation reset before うーん (`u-u-n`, not `o-o-n`)
+    const conjJa = tokenizeSpeech("遊ぼう？うーん…コーヒーを飲もう！", {
+      lexicon,
+      jaLexicon,
+      languageMode: "auto",
+      validKeysByBank: { zh: validKeys, en: enKeys, ja: jaKeys },
+    });
+    const conjKeys = conjJa.map((u) => u.key);
+    expect(conjKeys.slice(0, 4)).toEqual(["a", "so", "bo", "o"]);
+    expect(conjKeys.slice(4, 7)).toEqual(["u", "u", "n"]);
+    expect(conjKeys.slice(-3)).toEqual(["no", "mo", "o"]);
 
     // Pure Kanji with forced Japanese mode
     const pureKanjiJa = tokenizeSpeech("日本語", {
@@ -251,11 +267,27 @@ describe("ProsodyTokenizer", () => {
       validKeysByBank: { zh: validKeys, en: enKeys, ja: jaKeys },
     });
     expect(enUnits.every((u) => u.bank === "en" && enKeys.has(u.key))).toBe(true);
-    // "Hello" stresses second syllable ("lou"), "Island" starts with stressed "ai"
+    // "Hello" -> he, lou* ; "Island" starts with stressed "ai"
+    expect(enUnits[0].key).toBe("he");
     expect(enUnits[1].key).toBe("lou");
     expect(enUnits[1].stress).toBe(true);
     expect(enUnits[2].key).toBe("ai");
     expect(enUnits[2].stress).toBe(true);
+
+    // Closed English words preserve onset clusters (`sw`, `fr`, `wel`) and soft coda micro-units (`_s`, `_ks`, `_t`)
+    const richEn = tokenizeSpeech("Welcome! Sweet fruit, voice mix!", {
+      lexicon,
+      enLexicon,
+      validKeysByBank: { zh: validKeys, en: enKeys, ja: jaKeys },
+    });
+    const richKeys = richEn.map((u) => u.key);
+    expect(richKeys).toContain("wel");
+    expect(richKeys).toContain("kum");
+    expect(richKeys).toContain("swee");
+    expect(richKeys).toContain("froo");
+    expect(richKeys).toContain("_s");
+    expect(richKeys).toContain("_ks");
+    expect(richKeys).toContain("_t");
   });
 
   it("tokenizes representative ZH, JA, and EN sentences cleanly to their native banks", () => {
@@ -343,6 +375,15 @@ describe("Prosody 8-point pitch contour & formant specs", () => {
     // 'qu' uses ü formant (higher F2 than back-rounded 'ku')
     const ku = resolveFormantSpec("ku");
     expect(qu.start[1]).toBeGreaterThan(ku.start[1] + 500);
+
+    // Japanese moraic nasal, affricate tsu, and palatalized kya resolve cleanly
+    const jaN = resolveFormantSpec("n");
+    const jaTsu = resolveFormantSpec("tsu");
+    const jaKya = resolveFormantSpec("kya");
+    expect(jaN.onset).toBe("nasal");
+    expect(jaTsu.onset).toBe("affricate");
+    expect(jaKya.start[1]).toBeGreaterThan(2000);
+    expect(jaKya.end[0]).toBeGreaterThan(700);
   });
 
   it("isolates VoiceBankStore and equal-power audio mix calculations cleanly", async () => {

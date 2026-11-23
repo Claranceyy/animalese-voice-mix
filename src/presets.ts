@@ -2,8 +2,8 @@ import type { ProsodyConfig, VoicePreset } from "./types";
 
 export const DEFAULT_CONFIG: ProsodyConfig = {
   basePitchHz: 515,
-  unitsPerSecond: 15.2,
-  typingSpeed: 1.15,
+  unitsPerSecond: 10.0,
+  typingSpeed: 0.6,
   toneAmount: 0.62,
   stressSemitones: 1.0,
   maxLag: 0.75,
@@ -18,11 +18,11 @@ export const VOICE_PRESETS: readonly VoicePreset[] = [
     id: "sunny-helper",
     name: "岛务小秘书",
     enName: "Sunny Secretary",
-    description: "基准音高 515Hz，高语速与较大声调起伏，适合清脆元气角色。",
+    description: "基准音高 515Hz，舒展清晰语速与明显声调起伏，适合清脆元气角色。",
     config: {
       basePitchHz: 515,
-      unitsPerSecond: 15.2,
-      typingSpeed: 1.15,
+      unitsPerSecond: 10.0,
+      typingSpeed: 0.6,
       toneAmount: 0.62,
       maxLag: 0.75,
       mixRatio: 0.0,

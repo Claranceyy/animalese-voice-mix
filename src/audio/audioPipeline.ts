@@ -40,9 +40,11 @@ export class WebAudioPipeline {
       master.gain.value = config.volume * 0.9;
 
       const comp = ctx.createDynamicsCompressor();
-      comp.threshold.value = -12;
-      comp.knee.value = 18;
-      comp.ratio.value = 4;
+      comp.threshold.value = -9;
+      comp.knee.value = 10;
+      comp.ratio.value = 8;
+      comp.attack.value = 0.0008;
+      comp.release.value = 0.085;
 
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 1024;
@@ -111,14 +113,29 @@ export class WebAudioPipeline {
       const [offset, length] = resolved.slice;
       const src = ctx.createBufferSource();
       src.buffer = resolved.bank.buffer;
+
+      let playDur = length;
       if (config.rawDry) {
         src.playbackRate.setValueAtTime(1.0, startAt);
       } else {
-        src.playbackRate.setValueCurveAtTime(new Float32Array(contour.playbackRates), startAt, contour.durationSec);
+        const rates = contour.playbackRates;
+        const meanRate = Math.max(0.25, rates.reduce((sum, r) => sum + r, 0) / Math.max(1, rates.length));
+        playDur = Math.max(0.018, length / meanRate);
+        src.playbackRate.setValueCurveAtTime(new Float32Array(rates), startAt, playDur);
       }
 
       const g = ctx.createGain();
-      g.gain.value = 0.56 * sampleGain * contour.gainScale;
+      if (config.rawDry) {
+        g.gain.value = 0.52 * sampleGain;
+      } else {
+        const peakGain = Math.max(0.0002, 0.48 * sampleGain * Math.min(1.2, contour.gainScale));
+        const attack = Math.min(0.0028, playDur * 0.14);
+        const release = Math.min(0.010, playDur * 0.24);
+        g.gain.setValueAtTime(0.0001, startAt);
+        g.gain.linearRampToValueAtTime(peakGain, startAt + attack);
+        g.gain.setValueAtTime(peakGain, Math.max(startAt + attack, startAt + playDur - release));
+        g.gain.linearRampToValueAtTime(0.0001, startAt + playDur);
+      }
 
       src.connect(g);
       g.connect(bus);
@@ -128,7 +145,16 @@ export class WebAudioPipeline {
     }
 
     if (formantGain > 0.001) {
-      const fNodes = scheduleFormantSyllable(ctx, bus, unit.key, contour, startAt, formantGain, config.basePitchHz);
+      const fNodes = scheduleFormantSyllable(
+        ctx,
+        bus,
+        unit.key,
+        contour,
+        startAt,
+        formantGain,
+        config.basePitchHz,
+        unit.bank
+      );
       for (const node of fNodes) {
         this.activeSources.add(node);
         if ("onended" in node) {

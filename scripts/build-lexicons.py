@@ -48,17 +48,21 @@ EN_CONSONANTS = {
     "b": "b", "d": "d", "ɾ": "t", "f": "f", "ɡ": "g", "g": "g", "h": "h",
     "ʤ": "j", "k": "k", "l": "l", "m": "m", "n": "n", "p": "p", "ɹ": "r",
     "r": "r", "s": "s", "t": "t", "v": "v", "w": "w", "j": "y", "z": "z",
-    "ʃ": "sh", "ʧ": "ch", "θ": "th", "ð": "dh", "ʒ": "sh", "ŋ": "n",
+    "ʃ": "sh", "ʧ": "ch", "θ": "th", "ð": "dh", "ʒ": "sh", "ŋ": "ng",
 }
 
 CLUSTERS = {
     "st", "tr", "kr", "pr", "br", "dr", "fr", "gr", "pl", "fl", "kl", "bl", "sl", "sp", "sk",
+    "sw", "sm", "sn", "tw", "kw", "th", "spr",
     "by", "ky", "my", "ny", "fy", "vy",
 }
 
 
 def ipa_to_en_syllables(ipa_str: str, en_keys: Set[str]) -> List[str]:
-    """Split a space-separated Kokoro US-English IPA string into `en.json` keys with `*` stress."""
+    """
+    Split a space-separated Kokoro US-English IPA string into `en.json` keys with `*` stress,
+    preserving r-colored nuclei, syllabic `-l/-n/-m` rimes, and word-final coda micro-units (`_s`, `_k`, `_t`...).
+    """
     tokens = ipa_str.split()
     out: List[str] = []
     onset_buf: List[str] = []
@@ -77,40 +81,80 @@ def ipa_to_en_syllables(ipa_str: str, en_keys: Set[str]) -> List[str]:
 
         if tok in EN_VOWELS:
             v_key = EN_VOWELS[tok]
-            # Handle r-colored vowel (ɑɹ, ɔɹ, ɜɹ) or -ing (ɪŋ)
-            if v_key == "er" and i + 1 < len(tokens) and tokens[i + 1] == "ɹ":
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+            nxt2 = tokens[i + 2] if i + 2 < len(tokens) else ""
+            nxt_is_coda = nxt2 == "" or (nxt2 in EN_CONSONANTS and nxt2 != "ɹ")
+
+            # 1. R-colored vowels (ɜɹ, ɑɹ, ɔɹ) both with and without onset consonants
+            if v_key == "er" and nxt == "ɹ":
                 i += 1
-            elif v_key == "aa" and i + 1 < len(tokens) and tokens[i + 1] == "ɹ" and not onset_buf:
+            elif v_key == "aa" and nxt == "ɹ" and nxt_is_coda:
                 v_key = "ar"
                 i += 1
-            elif v_key == "o" and i + 1 < len(tokens) and tokens[i + 1] == "ɹ" and not onset_buf:
+            elif v_key == "o" and nxt == "ɹ" and nxt_is_coda:
                 v_key = "or"
                 i += 1
-            elif v_key == "i" and i + 1 < len(tokens) and tokens[i + 1] == "ŋ":
-                # Emit onset+i or pure ing
-                if not onset_buf:
-                    out.append("ing*" if stressed else "ing")
+            # 2. Closed syllabic / unstressed rimes (`əl -> ul`, `ən -> un`, `ʌm -> um`, `ɛl -> el`, `ɔl -> ol`)
+            elif tok in ("ə", "ᵊ") and nxt == "l" and nxt_is_coda:
+                v_key = "ul"
+                i += 1
+            elif tok in ("ə", "ᵊ") and nxt == "n" and nxt_is_coda and onset_buf and (onset_buf[-1] + "un") in en_keys:
+                v_key = "un"
+                i += 1
+            elif tok in ("ʌ", "ə") and nxt == "m" and nxt_is_coda and onset_buf and (onset_buf[-1] + "um") in en_keys:
+                v_key = "um"
+                i += 1
+            elif tok == "ɛ" and nxt == "l" and nxt_is_coda and onset_buf and (onset_buf[-1] + "el") in en_keys:
+                v_key = "el"
+                i += 1
+            elif tok == "ɔ" and nxt == "l" and nxt_is_coda and ((onset_buf and (onset_buf[-1] + "ol") in en_keys) or not onset_buf):
+                v_key = "ol"
+                i += 1
+            elif v_key == "i" and nxt == "ŋ" and not onset_buf:
+                out.append("ing*" if stressed else "ing")
+                stressed = False
+                i += 2
+                continue
+            elif not onset_buf and nxt in ("n", "ŋ") and nxt2 == "":
+                fused = {"a": "an", "e": "en", "i": "ing" if nxt == "ŋ" else "in", "aa": "on", "o": "on", "u": "un"}.get(v_key)
+                if fused and fused in en_keys:
+                    out.append(f"{fused}*" if stressed else fused)
                     stressed = False
                     i += 2
                     continue
 
-            # Pick best onset cluster or final consonant immediately preceding this vowel
+            # Gentle unstressed `hə` -> `he` (so "hello" sounds like "heh-low" rather than "huh-low")
+            if tok == "ə" and onset_buf and onset_buf[-1] == "h":
+                v_key = "e"
+
+            # Pick best onset cluster or immediately preceding consonant
             chosen = None
-            if len(onset_buf) >= 2:
+            if len(onset_buf) >= 3:
+                tri = onset_buf[-3] + onset_buf[-2] + onset_buf[-1]
+                if tri in CLUSTERS and (tri + v_key) in en_keys:
+                    chosen = tri + v_key
+            if not chosen and len(onset_buf) >= 2:
                 pair = onset_buf[-2] + onset_buf[-1]
-                if pair in CLUSTERS:
+                if pair == "th" and v_key == "oo":
+                    pass
+                if onset_buf[-2] == "th" and onset_buf[-1] == "r":
+                    for c in ("three" if v_key == "ee" else "thoo" if v_key == "oo" else f"th{v_key}",):
+                        if c in en_keys:
+                            chosen = c
+                            break
+                elif pair in CLUSTERS:
                     cands = [pair + v_key, pair + ("u" if v_key == "oo" else v_key[0])]
                     for c in cands:
                         if c in en_keys:
                             chosen = c
                             break
             if not chosen and onset_buf:
-                # Keep th-cluster crisp (e.g. "through" θ ɹ u -> thoo instead of roo)
-                c1 = "th" if len(onset_buf) >= 2 and onset_buf[-2] == "th" and onset_buf[-1] == "r" else onset_buf[-1]
-                # Prefer exact onset+vowel, then graceful diphthong/vowel fallback
+                c1 = onset_buf[-1]
+                if c1 == "ng":
+                    c1 = "n"
                 cands = [
                     c1 + v_key,
-                    c1 + ("o" if v_key == "aa" else "e" if v_key == "er" else "a" if v_key == "au" else "o" if v_key == "oi" else v_key),
+                    c1 + ("o" if v_key in ("aa", "or", "oi", "ol") else "a" if v_key in ("ar", "au") else "e" if v_key in ("er", "el") else "u" if v_key in ("ul", "um", "un") else v_key),
                     c1 + "a",
                 ]
                 for c in cands:
@@ -119,11 +163,6 @@ def ipa_to_en_syllables(ipa_str: str, en_keys: Set[str]) -> List[str]:
                         break
             if not chosen:
                 chosen = v_key if v_key in en_keys else "a"
-
-            # Merge trailing ŋ as -ing if single syllable ended on ɪŋ
-            if tok == "ɪ" and i + 1 < len(tokens) and tokens[i + 1] == "ŋ" and i + 2 == len(tokens):
-                # Keep crisp consonant+i plus optional ing feel
-                pass
 
             out.append(f"{chosen}*" if stressed else chosen)
             onset_buf.clear()
@@ -135,8 +174,26 @@ def ipa_to_en_syllables(ipa_str: str, en_keys: Set[str]) -> List[str]:
             onset_buf.append(EN_CONSONANTS[tok])
         i += 1
 
-    # Fallback for vowel-less abbreviations (e.g. "shh", "mr")
-    if not out and onset_buf:
+    # Handle word-final English coda consonant(s) (`voice -> voi* _s`, `mix -> mi* _ks`, `catch -> ka* _ch`)
+    if out and onset_buf:
+        # Filter out post-vocalic `r` (already colored into vowel or soft in Animalese)
+        coda = [c for c in onset_buf if c not in ("r", "w", "y", "h")]
+        if coda:
+            coda_key = None
+            if len(coda) >= 2:
+                tail2 = coda[-2] + coda[-1]
+                if tail2 == "ks" and "_ks" in en_keys:
+                    coda_key = "_ks"
+                elif tail2 == "ts" and "_ts" in en_keys:
+                    coda_key = "_ts"
+            if not coda_key:
+                last_c = coda[-1]
+                mapped = {"dh": "_d", "th": "_s"}.get(last_c, f"_{last_c}")
+                if mapped in en_keys:
+                    coda_key = mapped
+            if coda_key:
+                out.append(coda_key)
+    elif not out and onset_buf:
         c = onset_buf[0]
         out.append(c if c in en_keys else "a")
 
@@ -179,9 +236,9 @@ def build_en_lexicon() -> None:
             break
 
     # Add curated manual entries for coined / game terms not in CMUdict
-    result.setdefault("animalese", "a* ni ma lee")
-    result.setdefault("xjbcat", "e* ji bi ka")
-    result.setdefault("clarance", "kla* ra")
+    result["animalese"] = "a* ni ma lee _z"
+    result.setdefault("xjbcat", "e* ji bi ka _t")
+    result.setdefault("clarance", "kla* run _s")
     result.setdefault("kokoro", "ko* ko rou")
     result.setdefault("i", "ai*")
     result.setdefault("a", "a")
@@ -247,8 +304,46 @@ def build_ja_lexicon() -> None:
     curated_words["知る"] = "しる"
     words.update(curated_words)
 
-    # Pull top 45,000 Japanese tokens from wordfreq and resolve readings via Apache-2.0 SudachiDict
+    godan_rows: Dict[str, Tuple[str, ...]] = {
+        "う": ("わ", "い", "う", "え", "お", "っ"),
+        "く": ("か", "き", "く", "け", "こ", "い"),
+        "ぐ": ("が", "ぎ", "ぐ", "げ", "ご", "い"),
+        "す": ("さ", "し", "す", "せ", "そ"),
+        "つ": ("た", "ち", "つ", "て", "と", "っ"),
+        "ぬ": ("な", "に", "ぬ", "ね", "の", "ん"),
+        "ぶ": ("ば", "び", "ぶ", "べ", "ぼ", "ん"),
+        "む": ("ま", "み", "む", "め", "も", "ん"),
+        "る": ("ら", "り", "る", "れ", "ろ", "っ"),
+    }
+
+    def expand_inflections(surface: str, reading: str, pos0: str, conj_type: str) -> None:
+        if len(surface) < 2 or len(reading) < 2 or surface[-1] != reading[-1]:
+            return
+        stem_s, stem_r, tail = surface[:-1], reading[:-1], surface[-1]
+        if not KANJI_RE.search(stem_s):
+            return
+        if pos0 == "動詞":
+            if "一段" in conj_type and tail == "る":
+                words.setdefault(stem_s, stem_r)
+            elif "五段" in conj_type and tail in godan_rows:
+                endings = godan_rows[tail]
+                for e in endings:
+                    actual_e = "っ" if (surface.endswith("行く") or surface == "行く") and e == "い" and tail == "く" else e
+                    words.setdefault(stem_s + actual_e, stem_r + actual_e)
+        elif pos0 == "形容詞" and tail == "い":
+            for e in ("い", "く", "か", "け", "さ"):
+                words.setdefault(stem_s + e, stem_r + e)
+
+    # Expand curated verbs & i-adjectives first so core conversational vocabulary is always covered
+    for cw, cr in list(curated_words.items()):
+        ms = tok.tokenize(cw, mode_c)
+        if len(ms) == 1:
+            pos = ms[0].part_of_speech()
+            expand_inflections(cw, cr, pos[0], pos[4])
+
+    # Pull top 55,000 Japanese tokens from wordfreq and resolve readings via Apache-2.0 SudachiDict
     top_ja = wordfreq.top_n_list("ja", 55000)
+    inflected_budget = 0
     for w in top_ja:
         if len(w) > 6 or not KANJI_RE.search(w):
             continue
@@ -261,9 +356,15 @@ def build_ja_lexicon() -> None:
             continue
         if len(w) == 1:
             chars.setdefault(w, reading)
-        elif len(words) < 12000:
-            words.setdefault(w, reading)
-        if len(words) >= 12000 and len(chars) >= 2200:
+        else:
+            if len(words) < 16500:
+                words.setdefault(w, reading)
+            if inflected_budget < 900 and len(morphemes) == 1:
+                pos = morphemes[0].part_of_speech()
+                if pos[0] in ("動詞", "形容詞"):
+                    expand_inflections(w, reading, pos[0], pos[4])
+                    inflected_budget += 1
+        if len(words) >= 16500 and chars and len(chars) >= 2200:
             break
 
     # Populate single-Kanji fallback table across all common CJK unified ideographs known to SudachiDict

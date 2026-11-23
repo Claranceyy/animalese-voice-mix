@@ -17,7 +17,7 @@ export const KANA_JA_MAP: Readonly<Record<string, string>> = {
   ま: "ma", み: "mi", む: "mu", め: "me", も: "mo",
   や: "ya", ゆ: "yu", よ: "yo",
   ら: "ra", り: "ri", る: "ru", れ: "re", ろ: "ro",
-  わ: "wa", を: "wo", ん: "n",
+  わ: "wa", を: "wo", ん: "n", ゔ: "bu",
   ぁ: "a", ぃ: "i", ぅ: "u", ぇ: "e", ぉ: "o",
   ゃ: "ya", ゅ: "yu", ょ: "yo",
 };
@@ -27,7 +27,7 @@ export const KANA_DIGRAPH_MAP: Readonly<Record<string, string>> = {
   きゃ: "kya", きゅ: "kyu", きょ: "kyo",
   ぎゃ: "gya", ぎゅ: "gyu", ぎょ: "gyo",
   しゃ: "sha", しゅ: "shu", しょ: "sho", しぇ: "she",
-  じゃ: "ja", じゅ: "ju", じょ: "jo",
+  じゃ: "ja", じゅ: "ju", じょ: "jo", じぇ: "je",
   ちゃ: "cha", ちゅ: "chu", ちょ: "cho", ちぇ: "che",
   にゃ: "nya", にゅ: "nyu", にょ: "nyo",
   ひゃ: "hya", ひゅ: "hyu", ひょ: "hyo",
@@ -36,10 +36,15 @@ export const KANA_DIGRAPH_MAP: Readonly<Record<string, string>> = {
   みゃ: "mya", みゅ: "myu", みょ: "myo",
   りゃ: "rya", りゅ: "ryu", りょ: "ryo",
   ふぁ: "fa", ふぃ: "fi", ふぇ: "fe", ふぉ: "fo",
-  てぃ: "ti", でぃ: "di",
+  てぃ: "ti", でぃ: "di", とぅ: "tu", どぅ: "du",
+  うぃ: "wi", うぇ: "we", うぉ: "wo",
+  ゔぁ: "ba", ゔぃ: "bi", ゔぇ: "be", ゔぉ: "bo",
 };
 
 export const JA_WEAK_KANA = new Set(["は", "が", "の", "を", "に", "で", "て", "ね", "よ", "と", "も"]);
+
+const JA_CASE_PARTICLES = new Set(["が", "の", "に", "で", "と", "も"]);
+const JA_FINAL_PARTICLES = new Set(["ね", "よ", "か", "な"]);
 
 export const KANA_ZH_FALLBACK: Readonly<Record<string, string>> = {
   a: "a", i: "yi", u: "wu", e: "ei", o: "ou",
@@ -58,11 +63,12 @@ export const KANA_ZH_FALLBACK: Readonly<Record<string, string>> = {
   ra: "la", ri: "li", ru: "lu", re: "le", ro: "luo",
   wa: "wa", wo: "wo", n: "en",
   kya: "qia", kyu: "qiu", kyo: "qiao", gya: "jia", gyu: "jiu", gyo: "jiao",
-  sha: "xia", shu: "xu", sho: "xiao", she: "xie", ja: "jia", ju: "ju", jo: "jiao",
+  sha: "xia", shu: "xu", sho: "xiao", she: "xie", ja: "jia", ju: "ju", jo: "jiao", je: "jie",
   cha: "qia", chu: "qu", cho: "qiao", che: "qie", nya: "nia", nyu: "niu", nyo: "niao",
   hya: "xia", hyu: "xiu", hyo: "xiao", bya: "bia", byu: "biu", byo: "biao",
   pya: "pia", pyu: "piu", pyo: "piao", mya: "mia", myu: "miu", myo: "miao",
-  rya: "lia", ryu: "liu", ryo: "liao", fa: "fa", fi: "fei", fe: "fei", fo: "fo", ti: "ti", di: "di",
+  rya: "lia", ryu: "liu", ryo: "liao", fa: "fa", fi: "fei", fe: "fei", fo: "fo",
+  ti: "ti", di: "di", tu: "tu", du: "du", wi: "wei", we: "wei",
 };
 
 const KANA_CHAR_RE = /[\u3041-\u3096\u30A1-\u30FAー]/;
@@ -108,7 +114,7 @@ export function hiraganaToMorae(
     }
     if (ch === "ー") {
       const v = moraVowel(lastMora);
-      out.push({ mora: v, weak: true, isLong: true, preGapSec: pendingSokuon ? 0.055 : undefined });
+      out.push({ mora: v, weak: true, isLong: true, preGapSec: pendingSokuon ? 0.048 : undefined });
       pendingSokuon = false;
       lastMora = v;
       p++;
@@ -118,7 +124,7 @@ export function hiraganaToMorae(
       const pair = ch + normalizeKana(hiraText[p + 1]);
       if (KANA_DIGRAPH_MAP[pair]) {
         const m = KANA_DIGRAPH_MAP[pair];
-        out.push({ mora: m, weak: false, preGapSec: pendingSokuon ? 0.055 : undefined });
+        out.push({ mora: m, weak: false, preGapSec: pendingSokuon ? 0.048 : undefined });
         pendingSokuon = false;
         lastMora = m;
         p += 2;
@@ -126,7 +132,7 @@ export function hiraganaToMorae(
       }
     }
     if (ch === "う" && out.length > 0 && moraVowel(lastMora) === "o") {
-      out.push({ mora: "o", weak: true, isLong: true, preGapSec: pendingSokuon ? 0.055 : undefined });
+      out.push({ mora: "o", weak: true, isLong: true, preGapSec: pendingSokuon ? 0.048 : undefined });
       pendingSokuon = false;
       lastMora = "o";
       p++;
@@ -134,13 +140,50 @@ export function hiraganaToMorae(
     }
     if (KANA_JA_MAP[ch]) {
       const m = KANA_JA_MAP[ch];
-      out.push({ mora: m, weak: JA_WEAK_KANA.has(ch), preGapSec: pendingSokuon ? 0.055 : undefined });
+      out.push({ mora: m, weak: false, preGapSec: pendingSokuon ? 0.048 : undefined });
       pendingSokuon = false;
       lastMora = m;
     }
     p++;
   }
   return { morae: out, trailingSokuon: pendingSokuon };
+}
+
+/**
+ * Context-aware Japanese postpositional/sentence-final particle detector.
+ * Prevents splitting ordinary Hiragana words (`こんにちは`, `こねこ`, `ありがとう`, `よろしく`, `とても`)
+ * at internal characters that happen to look like particles (`に`, `ね`, `よ`, `が`, `と`, `て`, `も`).
+ */
+export function isJapaneseEncliticParticle(text: string, i: number, hira: string, prevTokenWasParticle: boolean): boolean {
+  if (hira === "を") return true;
+  if (i <= 0) return false;
+
+  const prev = text[i - 1];
+  if (PHRASE_MARKS.has(prev) || /\s/.test(prev)) return false;
+
+  const next = i + 1 < text.length ? text[i + 1] : "";
+  const next2 = i + 2 < text.length ? text[i + 2] : "";
+  const atClauseEnd = !next || PHRASE_MARKS.has(next) || /\s/.test(next);
+
+  // Sentence-final particles (`ね!`, `よ!`, `か?`, `な`, `よね!`, `かな?`)
+  if (JA_FINAL_PARTICLES.has(hira)) {
+    if (atClauseEnd) return true;
+    const nextHira = normalizeKana(next);
+    const afterNextEnd = !next2 || PHRASE_MARKS.has(next2) || /\s/.test(next2);
+    if (afterNextEnd && ((hira === "よ" && nextHira === "ね") || (hira === "か" && nextHira === "な"))) {
+      return true;
+    }
+    return false;
+  }
+
+  // Case particles (`が`, `の`, `に`, `で`, `と`, `も`) immediately following Kanji/Katakana nouns or stacked particles (`には`, `にも`, `のも`)
+  if (JA_CASE_PARTICLES.has(hira)) {
+    if (CJK_RE.test(prev) || /[\u30A1-\u30FAー]/.test(prev)) return true;
+    if (prevTokenWasParticle && (hira === "も" || hira === "の" || hira === "に")) return true;
+    return false;
+  }
+
+  return false;
 }
 
 /** Detect whether raw `は` at index `i` is the Japanese topic particle (pronounced "wa"). */

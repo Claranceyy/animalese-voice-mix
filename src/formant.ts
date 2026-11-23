@@ -1,4 +1,4 @@
-import type { PitchContour } from "./types";
+import type { PitchContour, VoiceBankId } from "./types";
 
 export interface FormantSpec {
   /** Starting formant frequencies [F1, F2, F3] in Hz */
@@ -9,10 +9,13 @@ export interface FormantSpec {
   onset: "vowel" | "plosive" | "fricative" | "nasal" | "affricate";
   /** Characteristic noise band frequency for consonant transient */
   burstHz: number;
+  /** Optional glottal voicing attenuation (used for soft English coda tails) */
+  voicingScale?: number;
 }
 
 const INITIALS = [
-  "zh", "ch", "sh",
+  "zh", "ch", "sh", "ts", "dz",
+  "ky", "gy", "ny", "hy", "by", "py", "my", "ry", "ty", "dy",
   "b", "p", "m", "f", "d", "t", "n", "l",
   "g", "k", "h", "j", "q", "x", "r", "z", "c", "s", "y", "w",
 ] as const;
@@ -24,6 +27,7 @@ const VOWEL_FORMANTS: Record<string, { start: [number, number, number]; end?: [n
   i: { start: [300, 2280, 3020] },
   u: { start: [330, 780, 2360] },
   v: { start: [310, 1880, 2360] },
+  n: { start: [300, 1460, 2460] },
   er: { start: [490, 1340, 1740] },
   ai: { start: [740, 1220, 2580], end: [340, 2180, 2920] },
   ei: { start: [480, 1760, 2620], end: [310, 2260, 2980] },
@@ -36,6 +40,7 @@ const VOWEL_FORMANTS: Record<string, { start: [number, number, number]; end?: [n
   ong: { start: [420, 820, 2380], end: [360, 760, 2320] },
   ia: { start: [310, 2220, 2960], end: [740, 1280, 2600] },
   ie: { start: [310, 2220, 2960], end: [520, 1860, 2680] },
+  io: { start: [310, 2180, 2920], end: [520, 940, 2480] },
   iao: { start: [310, 2200, 2940], end: [420, 880, 2420] },
   iu: { start: [310, 2200, 2940], end: [350, 820, 2380] },
   ian: { start: [320, 2180, 2920], end: [580, 1660, 2580] },
@@ -54,9 +59,40 @@ const VOWEL_FORMANTS: Record<string, { start: [number, number, number]; end?: [n
   ue: { start: [310, 1860, 2380], end: [520, 1780, 2560] },
 };
 
-/** Resolve acoustic formant targets and consonant burst class for any pinyin syllable key. */
-export function resolveFormantSpec(key: string): FormantSpec {
+/** Resolve acoustic formant targets and consonant burst class for any pinyin, English, or Japanese mora key. */
+export function resolveFormantSpec(key: string, bank: VoiceBankId = "zh"): FormantSpec {
   const k = key.toLowerCase();
+  if (k.startsWith("_")) {
+    const coda = k.slice(1);
+    if (coda === "m" || coda === "n" || coda === "ng" || coda === "l") {
+      return {
+        start: [...VOWEL_FORMANTS.n.start] as [number, number, number],
+        end: [...VOWEL_FORMANTS.n.start] as [number, number, number],
+        onset: "nasal",
+        burstHz: 950,
+        voicingScale: 0.48,
+      };
+    }
+    const isAff = coda === "ch" || coda === "j" || coda === "ks" || coda === "ts";
+    const isFric = coda === "s" || coda === "z" || coda === "sh" || coda === "f" || coda === "v";
+    const voicedObstruent = coda === "z" || coda === "j" || coda === "v" || coda === "d";
+    return {
+      start: [420, 1500, 2500],
+      end: [420, 1500, 2500],
+      onset: isAff ? "affricate" : isFric ? "fricative" : "plosive",
+      burstHz: coda === "s" || coda === "z" || coda === "ks" || coda === "ts" ? 4600 : coda === "sh" || coda === "ch" ? 3100 : 2200,
+      voicingScale: voicedObstruent ? 0.25 : 0.05,
+    };
+  }
+  if (k === "n") {
+    return {
+      start: [...VOWEL_FORMANTS.n.start] as [number, number, number],
+      end: [...VOWEL_FORMANTS.n.start] as [number, number, number],
+      onset: "nasal",
+      burstHz: 950,
+    };
+  }
+
   let initial = "";
   let final = k;
 
@@ -68,8 +104,10 @@ export function resolveFormantSpec(key: string): FormantSpec {
     }
   }
 
-  // Handle j/q/x/y + u -> ü ("v") acoustic color, and y/w glides
-  if (initial === "y") {
+  // Handle Japanese palatalized Yoon initials (kya/sha/cha/nya/rya...) + Mandarin j/q/x/y/w glides
+  if (initial.length === 2 && initial.endsWith("y")) {
+    final = `i${final}`;
+  } else if (initial === "y") {
     if (final === "i" || final === "in" || final === "ing") {
       // keep i-nucleus
     } else if (final === "u" || final === "ue" || final === "uan" || final === "un") {
@@ -83,7 +121,7 @@ export function resolveFormantSpec(key: string): FormantSpec {
     } else if (!final.startsWith("u")) {
       final = `u${final}`;
     }
-  } else if ((initial === "j" || initial === "q" || initial === "x") && final.startsWith("u")) {
+  } else if (bank === "zh" && (initial === "j" || initial === "q" || initial === "x") && final.startsWith("u")) {
     final = final === "u" ? "v" : final === "ue" ? "ve" : "v";
   }
 
@@ -95,17 +133,18 @@ export function resolveFormantSpec(key: string): FormantSpec {
 
   let onset: FormantSpec["onset"] = "vowel";
   let burstHz = 1800;
+  const baseInit = initial.length === 2 && initial.endsWith("y") ? initial[0] : initial;
 
-  if (["b", "p", "d", "t", "g", "k"].includes(initial)) {
+  if (["b", "p", "d", "t", "g", "k"].includes(baseInit)) {
     onset = "plosive";
-    burstHz = initial === "b" || initial === "p" ? 1100 : initial === "d" || initial === "t" ? 2900 : 1850;
-  } else if (["f", "s", "sh", "x", "h"].includes(initial)) {
+    burstHz = baseInit === "b" || baseInit === "p" ? 1100 : baseInit === "d" || baseInit === "t" ? 2900 : 1850;
+  } else if (["f", "s", "sh", "x", "h"].includes(baseInit)) {
     onset = "fricative";
-    burstHz = initial === "s" ? 4800 : initial === "sh" || initial === "x" ? 3100 : 2100;
-  } else if (["z", "c", "zh", "ch", "j", "q"].includes(initial)) {
+    burstHz = baseInit === "s" ? 4800 : baseInit === "sh" || baseInit === "x" ? 3100 : 2100;
+  } else if (["z", "c", "zh", "ch", "j", "q", "ts", "dz"].includes(baseInit)) {
     onset = "affricate";
-    burstHz = initial === "z" || initial === "c" ? 4200 : 2800;
-  } else if (["m", "n", "l", "r"].includes(initial)) {
+    burstHz = baseInit === "z" || baseInit === "c" || baseInit === "ts" || baseInit === "dz" ? 4400 : 2800;
+  } else if (["m", "n", "l", "r"].includes(baseInit)) {
     onset = "nasal";
     burstHz = 950;
   }
@@ -145,12 +184,13 @@ export function scheduleFormantSyllable(
   contour: PitchContour,
   startAt: number,
   gainLevel: number,
-  basePitchHz: number
+  basePitchHz: number,
+  bank: VoiceBankId = "zh"
 ): AudioNode[] {
   const nodes: AudioNode[] = [];
   if (gainLevel <= 0.0005) return nodes;
 
-  const spec = resolveFormantSpec(key);
+  const spec = resolveFormantSpec(key, bank);
   const dur = Math.max(0.055, Math.min(0.22, contour.durationSec));
   const endAt = startAt + dur;
   // Gentle vocal-tract scaling so high-pitched cat voices stay crisp and bright
@@ -176,8 +216,9 @@ export function scheduleFormantSyllable(
 
   oscMain.type = "sawtooth";
   oscWarm.type = "triangle";
-  oscMixMain.gain.value = 0.68;
-  oscMixWarm.gain.value = 0.42;
+  const voiceScale = spec.voicingScale ?? 1.0;
+  oscMixMain.gain.value = 0.68 * voiceScale;
+  oscMixWarm.gain.value = 0.42 * voiceScale;
 
   const freqCurve = new Float32Array(contour.frequenciesHz.map((f) => Math.max(60, Math.min(2600, f))));
   oscMain.frequency.setValueCurveAtTime(freqCurve, startAt, dur);

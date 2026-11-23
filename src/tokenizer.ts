@@ -5,7 +5,6 @@ import {
   tokenizeEnglishWord,
 } from "./tokenizer/english";
 import {
-  JA_WEAK_KANA,
   KANA_DIGRAPH_MAP,
   KANA_JA_MAP,
   KANA_ZH_FALLBACK,
@@ -13,6 +12,7 @@ import {
   computeJapaneseClauseFlags,
   hiraganaToMorae,
   isJapaneseEParticle,
+  isJapaneseEncliticParticle,
   isJapanesePoliteTail,
   isJapaneseWaParticle,
   moraVowel,
@@ -64,7 +64,7 @@ export function tokenizeSpeech(text: string, options: TokenizerOptions = {}): Sp
     const useJa = Boolean(jaKeys && jaKeys.has(mora));
     const fallbackZh = KANA_ZH_FALLBACK[mora] ?? "a";
     if (useJa || hasZh(fallbackZh)) {
-      const gap = extra.preGapSec ?? (pendingJaSokuon ? 0.055 : undefined);
+      const gap = extra.preGapSec ?? (pendingJaSokuon ? 0.048 : undefined);
       pendingJaSokuon = false;
       raw.push({
         at,
@@ -129,8 +129,11 @@ export function tokenizeSpeech(text: string, options: TokenizerOptions = {}): Sp
       i++;
       continue;
     }
+    const prevJaTok = raw.length > 0 && raw[raw.length - 1].bank === "ja" ? raw[raw.length - 1] : null;
+    const isAdjacentToPrevJa = Boolean(prevJaTok && prevJaTok.at + prevJaTok.surface.length === i);
+
     if (ch === "ー") {
-      const v = moraVowel(lastJaMora);
+      const v = isAdjacentToPrevJa ? moraVowel(lastJaMora) : "a";
       pushJaMora(i, ch, v, true, { jaParticle: false });
       i++;
       continue;
@@ -141,8 +144,13 @@ export function tokenizeSpeech(text: string, options: TokenizerOptions = {}): Sp
       let consumed = 1;
       let surface = ch;
       let mora = KANA_JA_MAP[hira];
-      let isParticle = !isKatakana && JA_WEAK_KANA.has(hira);
-      const wordBreak = isKatakana && !prevWasKatakana;
+      let isParticle =
+        !isKatakana &&
+        isJapaneseEncliticParticle(text, i, hira, Boolean(isAdjacentToPrevJa && prevJaTok?.jaParticle));
+      const wordBreak =
+        (isKatakana && !prevWasKatakana) ||
+        (!isAdjacentToPrevJa && raw.length > 0) ||
+        Boolean(isAdjacentToPrevJa && prevJaTok?.jaParticle && !isParticle);
 
       if (i + 1 < text.length) {
         const pair = hira + normalizeKana(text[i + 1]);
@@ -155,6 +163,7 @@ export function tokenizeSpeech(text: string, options: TokenizerOptions = {}): Sp
       }
 
       let isClitic = isParticle;
+      let isLongU = false;
       if (consumed === 1 && !isKatakana) {
         if (hira === "は" && isJapaneseWaParticle(text, i)) {
           mora = "wa";
@@ -164,8 +173,14 @@ export function tokenizeSpeech(text: string, options: TokenizerOptions = {}): Sp
           mora = "e";
           isParticle = true;
           isClitic = true;
-        } else if (hira === "う" && raw.length > 0 && raw[raw.length - 1].bank === "ja" && moraVowel(lastJaMora) === "o") {
+        } else if (
+          hira === "う" &&
+          isAdjacentToPrevJa &&
+          moraVowel(lastJaMora) === "o" &&
+          text[i + 1] !== "ー"
+        ) {
           mora = "o";
+          isLongU = true;
           isParticle = false;
           isClitic = false;
         } else if (isJapanesePoliteTail(text, i, hira)) {
@@ -173,7 +188,7 @@ export function tokenizeSpeech(text: string, options: TokenizerOptions = {}): Sp
         }
       }
 
-      pushJaMora(i, surface, mora, isParticle || (hira === "う" && mora === "o"), {
+      pushJaMora(i, surface, mora, isParticle || isLongU, {
         jaWordBreak: wordBreak,
         jaParticle: isClitic,
       });

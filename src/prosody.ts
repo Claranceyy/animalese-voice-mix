@@ -14,19 +14,19 @@ export const TONE_CURVES: Readonly<Record<ToneNumber, readonly number[]>> = {
 };
 
 const JA_ROLE_BASE_ST: Readonly<Record<JaPitchRole, number>> = {
-  low: -0.9,
-  rise: 1.45,
-  high: 1.05,
-  fall: 0.85,
-  drop: -0.95,
+  low: -0.36,
+  rise: 0.44,
+  high: 0.34,
+  fall: 0.10,
+  drop: -0.42,
 };
 
 const JA_ROLE_CURVE: Readonly<Record<JaPitchRole, readonly number[]>> = {
-  low: [-0.4, 0.25],
-  rise: [-0.15, 0.55],
-  high: [0.2, 0.0],
-  fall: [0.45, -1.15],
-  drop: [-0.15, -0.55],
+  low: [-0.05, 0.05],
+  rise: [-0.04, 0.10],
+  high: [0.03, 0.0],
+  fall: [0.06, -0.16],
+  drop: [-0.04, -0.12],
 };
 
 export const CONTOUR_POINTS = 8;
@@ -79,39 +79,56 @@ export function solvePitchContour(
 
   // Language-aware phrase intonation envelope
   let phraseShape = (unit.pos === 0 ? 0.8 : 0) - 0.06 * unit.pos;
-  let gainScale = isExclamation ? 1.26 : 1.0;
+  let gainScale = isExclamation ? 1.14 : 1.0;
+  const isEnCoda = unit.bank === "en" && unit.key.startsWith("_");
 
   if (unit.bank === "ja") {
-    // Authentic Japanese per-word Tokyo pitch accent (L -> H -> H -> accent drop) + gentle phrase tilt
+    // Japanese Doubutsugo cadence: steady flat-topped mora vowels with subtle bunsetsu steps
     const role: JaPitchRole = unit.jaAccent ?? (unit.pos === 0 ? "low" : unit.weak ? "drop" : "high");
-    phraseShape = JA_ROLE_BASE_ST[role] - 0.045 * unit.pos;
-    if (role === "drop") gainScale *= 0.86;
-    if (role === "rise") gainScale *= 1.06;
+    phraseShape = JA_ROLE_BASE_ST[role] - 0.022 * Math.min(12, unit.pos);
+    if (unit.surface === "ー") {
+      phraseShape -= 0.14;
+      gainScale *= 0.90;
+    }
+    if (unit.key === "n") {
+      gainScale *= 0.88;
+    } else if (role === "drop") {
+      gainScale *= 0.93;
+    } else if (role === "rise") {
+      gainScale *= 1.04;
+    }
   } else if (unit.bank === "en") {
-    // English lexical stress bounces clearly above unstressed schwas
-    phraseShape = (unit.pos === 0 ? 0.5 : 0) - 0.05 * unit.pos + (stressed ? 0.7 : -0.45);
-    if (stressed) gainScale *= 1.08;
+    if (isEnCoda) {
+      phraseShape = -0.35 - 0.025 * Math.min(12, unit.pos);
+      gainScale *= 0.62;
+    } else {
+      // Single clean lexical stress contrast without double-counting stressSemitones
+      phraseShape = (unit.pos === 0 ? 0.35 : 0) - 0.028 * Math.min(12, unit.pos) + (stressed ? 0.0 : -0.32);
+      if (stressed) gainScale *= 1.05;
+    }
   }
 
+  const jitterScale = unit.bank === "ja" || isEnCoda ? 0.55 : 1.0;
+  const stressBoost = stressed ? config.stressSemitones * (unit.bank === "en" ? 0.78 : 1.0) : 0;
   let st =
     phraseShape +
-    deterministicJitter(unit.id) +
-    (isExclamation ? 1.0 : 0) +
-    (stressed ? config.stressSemitones : 0) +
+    deterministicJitter(unit.id) * jitterScale +
+    (isExclamation ? (unit.bank === "en" ? 0.65 : 1.0) : 0) +
+    stressBoost +
     (override?.pitchOffsetSt ?? 0);
 
   let bend = 0;
-  if (isQuestion && isPenultimate) st += 1.5;
+  if (isQuestion && isPenultimate) st += unit.bank === "ja" ? 0.9 : 1.5;
   if (isQuestion && isLast) {
-    st += 2.0;
-    bend = 3.0;
+    st += unit.bank === "ja" ? 1.4 : 2.0;
+    bend = unit.bank === "ja" ? 2.1 : 3.0;
   }
   if (isEllipsis && isLast) st -= 0.8;
 
   const useJaCurve = unit.bank === "ja" && unit.tone === 0;
   const jaRole: JaPitchRole = unit.jaAccent ?? (unit.pos === 0 ? "low" : unit.weak ? "drop" : "high");
   const toneCurve = useJaCurve ? JA_ROLE_CURVE[jaRole] : TONE_CURVES[unit.tone] ?? TONE_CURVES[0];
-  const curveScale = useJaCurve ? Math.max(0.55, config.toneAmount * 1.45) : config.toneAmount;
+  const curveScale = useJaCurve ? Math.max(0.4, config.toneAmount) : config.toneAmount;
   const semitones: number[] = [];
   const playbackRates: number[] = [];
   const frequenciesHz: number[] = [];
@@ -129,6 +146,7 @@ export function solvePitchContour(
     frequenciesHz.push(safeBaseHz * ratio);
   }
 
+  const moraDurScale = unit.bank === "ja" && unit.key === "n" ? 0.86 : isEnCoda ? 0.78 : 1.0;
   return {
     semitones,
     playbackRates,
@@ -136,6 +154,6 @@ export function solvePitchContour(
     baseSemitone: st,
     bendSemitones: bend,
     gainScale,
-    durationSec: rawUnitDurSec / baseRate,
+    durationSec: (rawUnitDurSec / baseRate) * moraDurScale,
   };
 }

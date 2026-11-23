@@ -18,8 +18,8 @@ export const VOICE_GAP: Readonly<Record<string, number>> = {
   "…": 0.3,
   "~": 0.1,
   "～": 0.1,
-  "っ": 0.055,
-  "ッ": 0.055,
+  "っ": 0.048,
+  "ッ": 0.048,
   "\n": 0.35,
 };
 
@@ -50,14 +50,21 @@ export const TEXT_PAUSE: Readonly<Record<string, number>> = {
  * Alphabetic characters advance faster than CJK logographs because ~3-4 letters
  * form one spoken syllable, keeping visual typing aligned with speech cadence.
  */
-export const LETTER_STEP = 0.4;
-export const KANA_STEP = 0.72;
+export const LETTER_STEP = 0.45;
+export const KANA_STEP = 1.48;
+/** Mora rate multiplier keeping Japanese multi-mora words crisp and distinct instead of blurred. */
+export const JA_MORA_RATE_SCALE = 0.95;
+/** Tight tuck rate multiplier attaching English word-final coda micro-units (`_s`, `_k`, `_t`) onto their vowel. */
+export const EN_CODA_RATE_SCALE = 1.88;
 const ALPHABET_RE = /[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\s'’-]/u;
 const KANA_STEP_RE = /[\u3041-\u3096\u30A1-\u30FAー]/;
 
-export function textRevealSteps(ch: string): number {
+export function textRevealSteps(ch: string, charUnits?: readonly Pick<SpeechUnit, "bank">[]): number {
   const pause = TEXT_PAUSE[ch];
   if (pause !== undefined) return pause;
+  if (charUnits && charUnits.length >= 1 && charUnits[0].bank === "ja") {
+    return charUnits.length * 1.48;
+  }
   if (ALPHABET_RE.test(ch)) return LETTER_STEP;
   if (KANA_STEP_RE.test(ch)) return KANA_STEP;
   return 1;
@@ -241,7 +248,12 @@ export function simulateVoiceClock(
           continue;
         }
         const weak = options.isWeakOverride ? options.isWeakOverride(u) : u.weak;
-        const effectiveUps = u.bank === "ja" ? options.unitsPerSecond * 1.22 : options.unitsPerSecond;
+        const effectiveUps =
+          u.bank === "en" && u.key.startsWith("_")
+            ? options.unitsPerSecond * EN_CODA_RATE_SCALE
+            : u.bank === "ja"
+              ? options.unitsPerSecond * JA_MORA_RATE_SCALE
+              : options.unitsPerSecond;
         decisions.push(
           clock.place(t, u, {
             weak,
@@ -255,7 +267,7 @@ export function simulateVoiceClock(
       }
     }
 
-    t += textRevealSteps(ch) / rate;
+    t += textRevealSteps(ch, unitsAtChar) / rate;
   }
 
   return {

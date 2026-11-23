@@ -15,8 +15,11 @@ const VOWEL_GRAPH_MAP: readonly [string, string][] = [
 ];
 
 const ONSET_DIGRAPHS = [
-  "sh", "ch", "th", "wh", "ph", "st", "tr", "kr", "cr", "pr", "br",
+  "spr", "thr",
+  "sh", "ch", "th", "wh", "ph", "qu",
+  "st", "tr", "kr", "cr", "pr", "br",
   "dr", "fr", "gr", "pl", "fl", "kl", "cl", "bl", "sl", "sp", "sk",
+  "sw", "sm", "sn", "tw", "kw",
 ] as const;
 
 export function isAsciiLetter(ch: string): boolean {
@@ -36,7 +39,20 @@ export function mapEnglishChunk(sub: string, enKeys: ReadonlySet<string>): strin
   let rest = s;
   for (const dg of ONSET_DIGRAPHS) {
     if (s.startsWith(dg)) {
-      onset = dg === "wh" ? "w" : dg === "ph" ? "f" : dg === "cr" ? "kr" : dg === "cl" ? "kl" : dg;
+      onset =
+        dg === "wh"
+          ? "w"
+          : dg === "ph"
+            ? "f"
+            : dg === "qu"
+              ? "kw"
+              : dg === "thr"
+                ? "th"
+                : dg === "cr"
+                  ? "kr"
+                  : dg === "cl"
+                    ? "kl"
+                    : dg;
       rest = s.slice(dg.length);
       break;
     }
@@ -103,15 +119,40 @@ export function lookupEnglishLexicon(
   }
   if (lower.endsWith("es") && lower.length > 4) {
     const hit = lexicon[lower.slice(0, -2)] ?? lexicon[lower.slice(0, -1)];
-    if (hit) return parse(hit);
+    if (hit) {
+      const base = parse(hit);
+      const lastKey = base[base.length - 1]?.key ?? "";
+      if (!lastKey.startsWith("_")) base.push({ key: "_z", stress: false });
+      return base;
+    }
   }
   if (lower.endsWith("s") && lower.length > 3 && !lower.endsWith("ss")) {
     const hit = lexicon[lower.slice(0, -1)];
-    if (hit) return parse(hit);
+    if (hit) {
+      const base = parse(hit);
+      const lastKey = base[base.length - 1]?.key ?? "";
+      const sibilantEnd = lastKey === "_s" || lastKey === "_z" || lastKey === "_ks" || lastKey === "_ts";
+      if (!sibilantEnd) {
+        const voiceless = lastKey === "_p" || lastKey === "_t" || lastKey === "_k" || lastKey === "_f";
+        if (lastKey === "_k") base[base.length - 1] = { key: "_ks", stress: false };
+        else if (lastKey === "_t") base[base.length - 1] = { key: "_ts", stress: false };
+        else base.push({ key: voiceless ? "_s" : "_z", stress: false });
+      }
+      return base;
+    }
   }
   if (lower.endsWith("ed") && lower.length > 4) {
     const hit = lexicon[lower.slice(0, -2)] ?? lexicon[lower.slice(0, -1)];
-    if (hit) return parse(hit);
+    if (hit) {
+      const base = parse(hit);
+      const lastKey = base[base.length - 1]?.key ?? "";
+      if (lastKey !== "_t" && lastKey !== "_d") {
+        const voiceless =
+          lastKey === "_p" || lastKey === "_k" || lastKey === "_f" || lastKey === "_s" || lastKey === "_sh" || lastKey === "_ch";
+        base.push({ key: voiceless ? "_t" : "_d", stress: false });
+      }
+      return base;
+    }
   }
   if (lower.endsWith("ly") && lower.length > 4) {
     const hit = lexicon[lower.slice(0, -2)];
@@ -182,7 +223,8 @@ export function tokenizeEnglishWord(
   if (lexHit && lexHit.length > 0 && enKeys) {
     const count = lexHit.length;
     for (let c = 0; c < count; c++) {
-      const segStart = Math.floor((c * word.length) / count);
+      const isCoda = lexHit[c].key.startsWith("_");
+      const segStart = isCoda ? Math.max(0, word.length - 1) : Math.floor((c * word.length) / count);
       const segEnd = Math.floor(((c + 1) * word.length) / count);
       const surface = word.slice(segStart, Math.max(segStart + 1, segEnd));
       const key = enKeys.has(lexHit[c].key) ? lexHit[c].key : mapEnglishChunk(surface, enKeys);
@@ -193,8 +235,8 @@ export function tokenizeEnglishWord(
         key,
         tone: 0,
         script: "latin",
-        stress: lexHit[c].stress,
-        weak: !lexHit[c].stress && count > 1 && word.length <= 4,
+        stress: isCoda ? false : lexHit[c].stress,
+        weak: isCoda || (!lexHit[c].stress && count > 1 && word.length <= 4),
       });
     }
     return out;

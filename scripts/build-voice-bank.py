@@ -28,6 +28,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import parselmouth
 from parselmouth.praat import call as praat_call
+from scipy.ndimage import maximum_filter1d
 from scipy.signal import butter, resample_poly, sosfiltfilt
 import soundfile as sf
 
@@ -283,11 +284,30 @@ def process_syllable(raw: np.ndarray, sr: int, unit_dur_sec: float = 0.115, targ
     rms = float(np.sqrt(np.mean(unit * unit)))
     if rms > 1e-6:
         unit *= TARGET_RMS / rms
-    peak = float(np.max(np.abs(unit)))
-    if peak > PEAK_LIMIT:
-        unit = PEAK_LIMIT * np.tanh(unit / PEAK_LIMIT)
+    unit = clean_envelope_limit(unit, ceiling=0.70, sr=TARGET_SR)
 
     return unit.astype(np.float32)
+
+
+def clean_envelope_limit(unit: np.ndarray, ceiling: float = 0.70, sr: int = TARGET_SR) -> np.ndarray:
+    """
+    Distortion-free lookahead envelope limiter replacing sample-by-sample `np.tanh`.
+    Smoothly attenuates transient spikes over a 5 ms window so waveforms never clip or buzz.
+    """
+    pk = float(np.max(np.abs(unit))) if unit.size else 0.0
+    if pk <= ceiling:
+        return unit
+    win = max(5, int(0.005 * sr) | 1)
+    env_pk = maximum_filter1d(np.abs(unit), size=win, mode="nearest")
+    raw_gain = np.minimum(1.0, ceiling / np.maximum(ceiling, env_pk))
+    hann = np.hanning(win)
+    hann /= np.sum(hann)
+    smooth_gain = np.convolve(raw_gain, hann, mode="same")
+    out = unit * smooth_gain
+    rem_pk = float(np.max(np.abs(out)))
+    if rem_pk > ceiling:
+        out *= ceiling / rem_pk
+    return out
 
 
 def pack_sprite(
@@ -439,23 +459,46 @@ def build_en_phonemes() -> Dict[str, str]:
         "ber": "bɜɹ", "der": "dɜɹ", "fer": "fɜɹ", "ger": "ɡɜɹ", "her": "hɜɹ", "ker": "kɜɹ",
         "ler": "lɜɹ", "mer": "mɜɹ", "ner": "nɜɹ", "per": "pɜɹ", "ser": "sɜɹ", "ter": "tɜɹ",
         "ver": "vɜɹ", "wer": "wɜɹ", "sher": "ʃɜɹ", "cher": "ʧɜɹ", "ther": "ðɜɹ",
-        # Crisp consonant clusters (stops English words sounding mushy!)
-        "sta": "stæ", "ste": "stɛ", "sti": "stɪ", "sto": "stɑ", "stou": "stO", "stu": "stu",
-        "tra": "tɹæ", "tre": "tɹɛ", "tri": "tɹɪ", "tro": "tɹɑ", "trou": "tɹO", "tru": "tɹu",
-        "kra": "kɹæ", "kre": "kɹɛ", "kri": "kɹɪ", "kro": "kɹɔ", "krou": "kɹO",
-        "pra": "pɹæ", "pre": "pɹɛ", "pri": "pɹɪ", "pro": "pɹO",
-        "bra": "bɹæ", "bre": "bɹɛ", "bri": "bɹɪ", "bro": "bɹO",
-        "dra": "dɹæ", "dre": "dɹɛ", "dri": "dɹɪ", "dro": "dɹɑ",
-        "fra": "fɹæ", "fre": "fɹɛ", "fri": "fɹi", "fro": "fɹɑ",
-        "gra": "ɡɹæ", "gre": "ɡɹɛ", "gri": "ɡɹi", "gro": "ɡɹO",
-        "pla": "plæ", "ple": "plA", "pli": "pli", "plo": "plɑ",
-        "fla": "flæ", "fle": "flɛ", "fli": "flɪ", "flo": "flO",
-        "kla": "klæ", "kle": "klɛ", "kli": "klɪ", "klo": "klO",
-        "bla": "blæ", "ble": "blɛ", "bli": "blɪ", "blo": "blO",
-        "sla": "slæ", "sle": "slɛ", "sli": "slɪ", "slo": "slO",
-        "spa": "spɑ", "spe": "spɛ", "spi": "spi", "spo": "spO",
-        "ska": "skɑ", "ske": "skɛ", "ski": "ski", "sko": "skO",
+        # Crisp consonant clusters (including long-vowel ee / ai / oo & sw/sm/sn/tw/kw)
+        "sta": "stæ", "ste": "stɛ", "sti": "stɪ", "stee": "sti", "sto": "stɑ", "stou": "stO", "stu": "stu", "stai": "stI", "star": "stɑɹ",
+        "tra": "tɹæ", "tre": "tɹɛ", "tri": "tɹɪ", "tree": "tɹi", "tro": "tɹɑ", "trou": "tɹO", "tru": "tɹu", "troo": "tɹu", "trai": "tɹI",
+        "kra": "kɹæ", "kre": "kɹɛ", "kri": "kɹɪ", "kree": "kɹi", "kro": "kɹɔ", "krou": "kɹO", "krai": "kɹI",
+        "pra": "pɹæ", "pre": "pɹɛ", "pri": "pɹɪ", "pree": "pɹi", "pro": "pɹO", "prai": "pɹI",
+        "bra": "bɹæ", "bre": "bɹɛ", "bri": "bɹɪ", "bree": "bɹi", "bro": "bɹO", "broo": "bɹu", "brai": "bɹI",
+        "dra": "dɹæ", "dre": "dɹɛ", "dri": "dɹɪ", "dree": "dɹi", "dro": "dɹɑ", "drai": "dɹI",
+        "fra": "fɹæ", "fre": "fɹɛ", "fri": "fɹi", "free": "fɹi", "fro": "fɹɑ", "froo": "fɹu", "frai": "fɹI",
+        "gra": "ɡɹæ", "gre": "ɡɹɛ", "gri": "ɡɹi", "gree": "ɡɹi", "gro": "ɡɹO", "groo": "ɡɹu",
+        "pla": "plæ", "ple": "plA", "pli": "pli", "plo": "plɑ", "plai": "plI",
+        "fla": "flæ", "fle": "flɛ", "fli": "flɪ", "flee": "fli", "flo": "flO", "flai": "flI",
+        "kla": "klæ", "kle": "klɛ", "kli": "klɪ", "klo": "klO", "klai": "klI",
+        "bla": "blæ", "ble": "blɛ", "bli": "blɪ", "blo": "blO", "bloo": "blu",
+        "sla": "slæ", "sle": "slɛ", "sli": "slɪ", "slee": "sli", "slo": "slO",
+        "spa": "spɑ", "spe": "spɛ", "spi": "spi", "spo": "spO", "spri": "spɹɪ",
+        "ska": "skɑ", "ske": "skɛ", "ski": "ski", "sko": "skO", "skai": "skI",
+        "swa": "swæ", "swe": "swɛ", "swi": "swɪ", "swee": "swi", "swo": "swɔ", "swai": "swI",
+        "sma": "smɑ", "sme": "smɛ", "smi": "smɪ", "smai": "smI", "smo": "smɔ",
+        "sna": "snæ", "sne": "snɛ", "sni": "snɪ", "snou": "snO",
+        "twa": "twɑ", "twe": "twɛ", "twi": "twɪ",
+        "kwa": "kwɑ", "kwe": "kwɛ", "kwi": "kwɪ", "kwai": "kwI",
+        "three": "θɹi", "thoo": "θɹu",
         "byu": "bju", "kyu": "kju", "myu": "mju", "nyu": "nju", "fyu": "fju", "vyu": "vju",
+        # R-colored CV syllables (fixes morning, market, star, park, shore, warm...)
+        "bar": "bɑɹ", "dar": "dɑɹ", "far": "fɑɹ", "gar": "ɡɑɹ", "har": "hɑɹ",
+        "kar": "kɑɹ", "lar": "lɑɹ", "mar": "mɑɹ", "par": "pɑɹ", "sar": "sɑɹ", "tar": "tɑɹ",
+        "bor": "bɔɹ", "dor": "dɔɹ", "for": "fɔɹ", "gor": "ɡɔɹ", "hor": "hɔɹ",
+        "kor": "kɔɹ", "lor": "lɔɹ", "mor": "mɔɹ", "nor": "nɔɹ", "por": "pɔɹ",
+        "sor": "sɔɹ", "tor": "tɔɹ", "wor": "wɔɹ", "shor": "ʃɔɹ",
+        # Syllabic -l / -n / -m & common closed rimes (fixes welcome, island, apple, beetle, ocean, some)
+        "ul": "əl", "bul": "bəl", "pul": "pəl", "tul": "təl", "dul": "dəl",
+        "kul": "kəl", "gul": "ɡəl", "ful": "fəl", "mul": "məl", "sul": "səl", "zul": "zəl",
+        "wel": "wɛl", "fel": "fɛl", "tel": "tɛl", "sel": "sɛl", "hel": "hɛl", "bel": "bɛl",
+        "ol": "ɔl", "kol": "kɔl", "bol": "bɔl", "fol": "fɔl",
+        "shun": "ʃən", "zhun": "ʒən", "chun": "ʧən", "lun": "lən", "run": "ɹən", "mun": "mən", "nun": "nən",
+        "kum": "kʌm", "sum": "sʌm", "hum": "hʌm",
+        # Soft word-final English coda micro-units (`_` prefix, tucked tightly onto preceding vowel)
+        "_s": "s", "_z": "z", "_sh": "ʃ", "_ch": "ʧ", "_j": "ʤ",
+        "_f": "f", "_v": "v", "_t": "t", "_d": "d", "_k": "k", "_p": "p",
+        "_m": "m", "_n": "n", "_ng": "ŋ", "_l": "l", "_ks": "ks", "_ts": "ts",
     }
     en_ipa.update(extra_combos)
     return dict(sorted(en_ipa.items()))
@@ -465,8 +508,8 @@ def build_en_phonemes() -> Dict[str, str]:
 def build_ja_phonemes() -> Dict[str, str]:
     """Genuine native Japanese IPA morae trained directly in Kokoro v1.0 (jf_alpha)."""
     ja_ipa: Dict[str, str] = {
-        # Pure 5 Japanese monophthongs
-        "a": "a", "i": "i", "u": "ɯ", "e": "e", "o": "o",
+        # Pure 5 Japanese monophthongs (`ɑ` guarantees open Japanese あ without English schwa drift)
+        "a": "ɑ", "i": "i", "u": "ɯ", "e": "e", "o": "o",
         # K
         "ka": "ka", "ki": "ki", "ku": "kɯ", "ke": "ke", "ko": "ko",
         # G
@@ -507,11 +550,305 @@ def build_ja_phonemes() -> Dict[str, str]:
         "pya": "pʲa", "pyu": "pʲɯ", "pyo": "pʲo",
         "mya": "mʲa", "myu": "mʲɯ", "myo": "mʲo",
         "rya": "ɾʲa", "ryu": "ɾʲɯ", "ryo": "ɾʲo",
-        # Extended Katakana loanword morae (ファ/フィ/フェ/フォ/ティ/ディ/シェ/チェ)
+        # Extended Katakana loanword morae (ファ/フィ/フェ/フォ/ティ/ディ/トゥ/ドゥ/シェ/チェ/ジェ/ウィ/ウェ)
         "fa": "ɸa", "fi": "ɸi", "fe": "ɸe", "fo": "ɸo",
-        "ti": "ti", "di": "di", "she": "ɕe", "che": "ʨe",
+        "ti": "ti", "di": "di", "tu": "tɯ", "du": "dɯ",
+        "she": "ɕe", "che": "ʨe", "je": "ʥe",
+        "wi": "wi", "we": "we",
     }
     return dict(sorted(ja_ipa.items()))
+
+
+def extract_ja_carrier_mora(k: object, v_style: np.ndarray, ph: str) -> Tuple[np.ndarray, int]:
+    """
+    Synthesize a Japanese mora inside an utterance-initial carrier followed by a
+    geminate voiceless stop (`{ph}ː ʔtote.`) using a mid-sentence style vector (`v_style[18]`).
+
+    Why this matters:
+    - Passing isolated 1-2 phoneme strings into Kokoro hits degenerate `v_style[0..1]`
+      vectors and triggers Japanese high-vowel devoicing (`き/し/ち/す/つ/ひ/ふ`), collapsing
+      vowel formants toward a central schwa.
+    - Lengthening `{ph}ː` before the mandatory silent closure of `ʔt` guarantees
+      100% clear Japanese vowel formants AND a clean zero-energy right boundary.
+    """
+    tok = "ɴː" if ph == "ɴ" else f"{ph}ː"
+    carrier = f"{tok} ʔtote."
+    tokens = k.tokenizer.tokenize(carrier)
+    style_row = v_style[min(18, len(v_style) - 1)]
+    raw, _ = k._infer(tokens, style_row, 1.0)
+    sr = 24000
+
+    w = raw.astype(np.float64)
+    win = int(0.006 * sr)
+    env = np.sqrt(np.maximum(0.0, np.convolve(w * w, np.ones(win) / win, mode="same")))
+    first_half = env[: max(win, int(0.58 * len(env)))]
+    pk1 = float(np.max(first_half)) if first_half.size else 0.0
+    if pk1 <= 1e-6:
+        return raw, sr
+
+    # 1. Locate main vowel nucleus peak of `{tok}`, then capture full initial consonant burst/frication
+    vowel_hits = np.where(first_half >= 0.30 * pk1)[0]
+    v_peak_start = int(vowel_hits[0]) if vowel_hits.size else int(np.argmax(first_half))
+    pre_hits = np.where(env[: v_peak_start + 1] >= max(0.0025, 0.020 * pk1))[0]
+    start_idx = max(0, int(pre_hits[0]) - int(0.008 * sr)) if pre_hits.size else max(0, v_peak_start - int(0.020 * sr))
+
+    # 2. Scan forward after vowel establishment for the silent `ʔt` geminate closure (>= 28 ms quiet valley)
+    search_from = min(len(env) - 1, v_peak_start + int(0.055 * sr))
+    min_gap = int(0.028 * sr)
+    quiet = env[search_from:] < (0.038 * pk1)
+    end_idx = min(len(w), v_peak_start + int(0.28 * sr))
+    run_len = 0
+    for off, is_q in enumerate(quiet):
+        if is_q:
+            run_len += 1
+            if run_len >= min_gap:
+                gap_start = search_from + off - run_len + 1
+                end_idx = min(len(w), gap_start + int(0.008 * sr))
+                break
+        else:
+            run_len = 0
+
+    return raw[start_idx:end_idx].copy(), sr
+
+
+def process_ja_mora(raw: np.ndarray, sr: int, unit_dur_sec: float = 0.112, target_hz: float = TARGET_HZ) -> np.ndarray:
+    """
+    Two-zone consonant-preserving PSOLA normalizer tailored for Japanese Doubutsugo:
+    - Preserves crisp initial consonant articulation (`18-28 ms`) without excessive sibilant hiss;
+    - Dedicates a full `80-90 ms` steady voiced vowel core flattened to `364 Hz` with zero hard truncation.
+    """
+    target_samples = int(round(unit_dur_sec * TARGET_SR))
+    if raw.size < 200:
+        return np.zeros(target_samples, dtype=np.float32)
+
+    audio = raw.astype(np.float64)
+    if sr != TARGET_SR:
+        g = int(np.gcd(sr, TARGET_SR))
+        audio = resample_poly(audio, TARGET_SR // g, sr // g)
+    audio = sosfiltfilt(HP_SOS, audio)
+
+    win = int(0.005 * TARGET_SR)
+    kernel = np.ones(win, dtype=np.float64) / win
+    env = np.sqrt(np.maximum(0.0, np.convolve(audio * audio, kernel, mode="same")))
+    pk = float(np.max(env)) if env.size else 0.0
+    if pk <= 1e-6:
+        return np.zeros(target_samples, dtype=np.float32)
+
+    nz = np.where(env >= max(0.0025, 0.022 * pk))[0]
+    nz_tail = np.where(env >= max(0.005, 0.08 * pk))[0]
+    s0 = max(0, int(nz[0]) - int(0.006 * TARGET_SR)) if nz.size else 0
+    e0 = min(audio.size, int(nz_tail[-1]) + int(0.012 * TARGET_SR)) if nz_tail.size else audio.size
+    active = audio[s0:e0].copy()
+    if active.size < int(0.040 * TARGET_SR):
+        active = audio.copy()
+
+    total_budget = unit_dur_sec * 0.965
+    voiced_start_out = 0.018
+
+    try:
+        snd = parselmouth.Sound(active, sampling_frequency=TARGET_SR)
+        dur = float(snd.duration)
+        pit = snd.to_pitch(time_step=0.004, pitch_floor=100.0, pitch_ceiling=620.0)
+        freqs = pit.selected_array["frequency"]
+        xs = pit.xs()
+        v_idx = np.where(freqs > 0)[0]
+        v_start = float(xs[v_idx[0]]) if v_idx.size else min(0.025, dur * 0.2)
+        v_start = max(0.0, min(dur - 0.035, v_start))
+
+        # Gently tame overly loud voiceless sibilant hiss relative to vowel nucleus before PSOLA
+        if v_start > 0.018:
+            c_end = int(v_start * TARGET_SR)
+            c_rms = float(np.sqrt(np.mean(active[:c_end] ** 2))) if c_end > 0 else 0.0
+            v_rms = float(np.sqrt(np.mean(active[c_end:] ** 2))) if c_end < active.size else c_rms
+            if v_rms > 1e-6 and c_rms > 0.58 * v_rms:
+                active[:c_end] *= (0.58 * v_rms) / c_rms
+                snd = parselmouth.Sound(active, sampling_frequency=TARGET_SR)
+
+        manip = praat_call(snd, "To Manipulation", 0.005, 95, 620)
+        pitch_tier = praat_call("Create PitchTier", "flat", 0.0, dur)
+        praat_call(pitch_tier, "Add point", 0.0, float(target_hz))
+        praat_call(pitch_tier, "Add point", dur, float(target_hz))
+        praat_call([manip, pitch_tier], "Replace pitch tier")
+
+        dur_tier = praat_call("Create DurationTier", "twozone", 0.0, dur)
+        if v_start >= 0.014 and (dur - v_start) >= 0.040:
+            target_c = min(0.027, max(0.016, v_start * 0.46))
+            target_v = max(0.068, total_budget - target_c)
+            ratio_c = max(0.24, min(1.05, target_c / v_start))
+            ratio_v = max(0.22, min(1.05, target_v / (dur - v_start)))
+            t_mid1 = max(0.002, v_start - 0.003)
+            t_mid2 = min(dur - 0.002, v_start + 0.003)
+            praat_call(dur_tier, "Add point", 0.0, float(ratio_c))
+            praat_call(dur_tier, "Add point", float(t_mid1), float(ratio_c))
+            praat_call(dur_tier, "Add point", float(t_mid2), float(ratio_v))
+            praat_call(dur_tier, "Add point", dur, float(ratio_v))
+            voiced_start_out = target_c
+        else:
+            ratio_all = max(0.24, min(1.05, total_budget / max(0.04, dur)))
+            praat_call(dur_tier, "Add point", 0.0, float(ratio_all))
+            praat_call(dur_tier, "Add point", dur, float(ratio_all))
+            voiced_start_out = v_start * ratio_all
+
+        praat_call([manip, dur_tier], "Replace duration tier")
+        resynth = praat_call(manip, "Get resynthesis (overlap-add)")
+        proc = np.asarray(resynth.values[0], dtype=np.float64)
+        if proc.size > 0 and np.isfinite(proc).all():
+            active = proc
+    except Exception:
+        pass
+
+    env2 = np.sqrt(np.maximum(0.0, np.convolve(active * active, kernel, mode="same")))
+    p2 = float(np.max(env2)) if env2.size else 0.0
+    if p2 > 1e-6:
+        nz2 = np.where(env2 >= 0.03 * p2)[0]
+        if nz2.size:
+            s2 = max(0, int(nz2[0]) - int(0.003 * TARGET_SR))
+            active = active[s2:]
+
+    if active.size >= target_samples:
+        unit = active[:target_samples].copy()
+    else:
+        unit = np.zeros(target_samples, dtype=np.float64)
+        unit[: active.size] = active
+
+    fade_in = min(int(0.0022 * TARGET_SR), unit.size // 8)
+    fade_out = min(int(0.015 * TARGET_SR), unit.size // 4)
+    if fade_in > 1:
+        unit[:fade_in] *= 0.5 * (1.0 - np.cos(np.linspace(0.0, np.pi, fade_in)))
+    if fade_out > 1:
+        unit[-fade_out:] *= 0.5 * (1.0 + np.cos(np.linspace(0.0, np.pi, fade_out)))
+
+    # Equalize loudness primarily on the voiced vowel core so every mora projects equally clearly
+    v_s = min(unit.size // 2, max(0, int(voiced_start_out * TARGET_SR)))
+    v_e = max(v_s + int(0.030 * TARGET_SR), unit.size - fade_out)
+    vowel_slice = unit[v_s:v_e]
+    rms = float(np.sqrt(np.mean(vowel_slice * vowel_slice))) if vowel_slice.size else 0.0
+    if rms <= 1e-6:
+        rms = float(np.sqrt(np.mean(unit * unit)))
+    if rms > 1e-6:
+        unit *= (TARGET_RMS * 1.02) / rms
+    unit = clean_envelope_limit(unit, ceiling=0.68, sr=TARGET_SR)
+
+    return unit.astype(np.float32)
+
+
+EN_VOWEL_CHARS = set("æɑɛɪiɔuʌIAOWYəɜ")
+
+
+def lengthen_en_ipa(ph: str) -> str:
+    """Insert `ː` right after the primary vowel nucleus so carrier synthesis yields a clear vowel body."""
+    for idx in range(len(ph) - 1, -1, -1):
+        if ph[idx] in EN_VOWEL_CHARS:
+            return ph[: idx + 1] + "ː" + ph[idx + 1 :]
+    return ph + "ː"
+
+
+def build_en_coda_unit(k: object, v_style: np.ndarray, key: str, ph: str, unit_dur_sec: float = 0.064) -> np.ndarray:
+    """
+    Synthesize a soft, non-intrusive English word-final coda micro-unit (`_s`, `_k`, `_t`, `_sh`, `_m`...):
+    - Sonorant codas (`_m`, `_n`, `_ng`, `_l`) keep a gentle 364Hz voiced murmur;
+    - Obstruent codas (`_s`, `_z`, `_sh`, `_ch`, `_t`, `_k`, `_ks`, `_ts`...) extract the crisp post-vowel
+      release from `"hˈɑ{ph}."` with smooth cosine edges and zero waveshaping distortion.
+    """
+    target_samples = int(round(unit_dur_sec * TARGET_SR))
+    sr = 24000
+    style_row = v_style[min(18, len(v_style) - 1)]
+
+    if key in ("_m", "_n", "_ng", "_l"):
+        tokens = k.tokenizer.tokenize(f"ˈəː{ph}ː ʔtote.")
+        raw, _ = k._infer(tokens, style_row, 1.0)
+        w = raw.astype(np.float64)
+        win = int(0.006 * sr)
+        env = np.sqrt(np.maximum(0.0, np.convolve(w * w, np.ones(win) / win, mode="same")))
+        pk1 = float(np.max(env[: int(0.58 * len(env))])) if env.size else 0.0
+        vh = np.where(env[: int(0.58 * len(env))] >= 0.25 * pk1)[0]
+        vs = int(vh[0]) if vh.size else 0
+        q_s = min(len(env) - win, vs + int(0.08 * sr))
+        q_e = min(len(env), vs + int(0.38 * sr))
+        q_w = int(0.022 * sr)
+        e_idx = q_s + int(np.argmin(np.convolve(env[q_s:q_e], np.ones(q_w) / q_w, mode="valid"))) if q_e - q_s > q_w else q_e
+        s_idx = max(vs, e_idx - int(0.11 * sr))
+        tail = raw[s_idx:e_idx].copy()
+        unit = process_ja_mora(tail, sr, unit_dur_sec=unit_dur_sec, target_hz=TARGET_HZ).astype(np.float64)
+        unit *= 0.54
+        return clean_envelope_limit(unit, ceiling=0.44, sr=TARGET_SR).astype(np.float32)
+
+    tokens = k.tokenizer.tokenize(f"hˈɑ{ph}.")
+    raw, _ = k._infer(tokens, style_row, 1.0)
+    audio = resample_poly(raw.astype(np.float64), TARGET_SR // 24000, 1)
+    audio = sosfiltfilt(HP_SOS, audio)
+
+    snd = parselmouth.Sound(audio, sampling_frequency=TARGET_SR)
+    pit = snd.to_pitch(time_step=0.004, pitch_floor=100.0, pitch_ceiling=550.0)
+    freqs = pit.selected_array["frequency"]
+    xs = pit.xs()
+    v_idx = np.where(freqs > 0)[0]
+    coda_start_sec = float(xs[v_idx[-1]]) - 0.006 if v_idx.size else snd.duration * 0.45
+    s_i = max(0, int(coda_start_sec * TARGET_SR))
+
+    win = int(0.004 * TARGET_SR)
+    env = np.sqrt(np.maximum(0.0, np.convolve(audio * audio, np.ones(win) / win, mode="same")))
+    sub_env = env[s_i:]
+    pk = float(np.max(sub_env)) if sub_env.size else 0.0
+    nz = np.where(sub_env >= max(0.0015, 0.04 * pk))[0]
+    if nz.size:
+        seg = audio[s_i + max(0, int(nz[0]) - int(0.004 * TARGET_SR)) : s_i + int(nz[-1]) + int(0.008 * TARGET_SR)].copy()
+    else:
+        seg = audio[s_i : s_i + target_samples].copy()
+
+    if seg.size > target_samples:
+        # Keep onset transition + crisp release without exceeding budget
+        idx_grid = np.linspace(0, seg.size - 1, target_samples)
+        unit = np.interp(idx_grid, np.arange(seg.size), seg)
+    else:
+        unit = np.zeros(target_samples, dtype=np.float64)
+        unit[: seg.size] = seg
+
+    fade_in = min(int(0.006 * TARGET_SR), unit.size // 4)
+    fade_out = min(int(0.016 * TARGET_SR), unit.size // 3)
+    if fade_in > 1:
+        unit[:fade_in] *= 0.5 * (1.0 - np.cos(np.linspace(0.0, np.pi, fade_in)))
+    if fade_out > 1:
+        unit[-fade_out:] *= 0.5 * (1.0 + np.cos(np.linspace(0.0, np.pi, fade_out)))
+
+    rms = float(np.sqrt(np.mean(unit * unit)))
+    if rms > 1e-6:
+        unit *= (TARGET_RMS * 0.36) / rms
+    return clean_envelope_limit(unit, ceiling=0.38, sr=TARGET_SR).astype(np.float32)
+
+
+def extract_en_carrier_syllable(k: object, v_style: np.ndarray, ph: str) -> Tuple[np.ndarray, int]:
+    """Synthesize an English syllable inside `'ˈ{phː} ʔtote.'` using mid-sentence style vector `v_style[20]`."""
+    tok = lengthen_en_ipa(ph)
+    carrier = f"ˈ{tok} ʔtote."
+    tokens = k.tokenizer.tokenize(carrier)
+    style_row = v_style[min(20, len(v_style) - 1)]
+    raw, _ = k._infer(tokens, style_row, 1.0)
+    sr = 24000
+
+    w = raw.astype(np.float64)
+    win = int(0.006 * sr)
+    env = np.sqrt(np.maximum(0.0, np.convolve(w * w, np.ones(win) / win, mode="same")))
+    first_half = env[: max(win, int(0.58 * len(env)))]
+    pk1 = float(np.max(first_half)) if first_half.size else 0.0
+    if pk1 <= 1e-6:
+        return raw, sr
+
+    vowel_hits = np.where(first_half >= 0.28 * pk1)[0]
+    v_peak_start = int(vowel_hits[0]) if vowel_hits.size else int(np.argmax(first_half))
+    pre_hits = np.where(env[: v_peak_start + 1] >= max(0.002, 0.018 * pk1))[0]
+    start_idx = max(0, int(pre_hits[0]) - int(0.008 * sr)) if pre_hits.size else max(0, v_peak_start - int(0.018 * sr))
+
+    q_start = min(len(env) - win, v_peak_start + int(0.065 * sr))
+    q_end = min(len(env), v_peak_start + int(0.35 * sr))
+    q_win = int(0.024 * sr)
+    if q_end - q_start > q_win:
+        sm = np.convolve(env[q_start:q_end], np.ones(q_win) / q_win, mode="valid")
+        end_idx = min(len(w), q_start + int(np.argmin(sm)) + int(0.006 * sr))
+    else:
+        end_idx = min(len(w), v_peak_start + int(0.24 * sr))
+
+    return raw[start_idx:end_idx].copy(), sr
 
 
 def build_v1_0_bank(
@@ -531,6 +868,7 @@ def build_v1_0_bank(
         raise FileNotFoundError(f"Kokoro v1.0 files not found in {v1_dir}")
 
     k = kokoro_onnx.Kokoro(str(model_path), str(voices_path))
+    v_style = k.get_voice_style(voice)
     vocab = k.tokenizer.vocab
     for key, ph in phonemes_map.items():
         for ch in ph:
@@ -542,8 +880,18 @@ def build_v1_0_bank(
     t0 = time.perf_counter()
     items = list(phonemes_map.items())
     for idx, (key, ph) in enumerate(items, 1):
-        wav, sr = k.create(ph, voice=voice, speed=speed, is_phonemes=True)
-        unit_wav = process_syllable(wav, sr, unit_dur_sec=unit_dur, target_hz=TARGET_HZ)
+        if lang == "ja":
+            wav, sr = extract_ja_carrier_mora(k, v_style, ph)
+            unit_wav = process_ja_mora(wav, sr, unit_dur_sec=unit_dur, target_hz=TARGET_HZ)
+        elif lang == "en":
+            if key.startswith("_"):
+                unit_wav = build_en_coda_unit(k, v_style, key, ph, unit_dur_sec=0.064)
+            else:
+                wav, sr = extract_en_carrier_syllable(k, v_style, ph)
+                unit_wav = process_ja_mora(wav, sr, unit_dur_sec=unit_dur, target_hz=TARGET_HZ)
+        else:
+            wav, sr = k.create(ph, voice=voice, speed=speed, is_phonemes=True)
+            unit_wav = process_syllable(wav, sr, unit_dur_sec=unit_dur, target_hz=TARGET_HZ)
         built.append((key, unit_wav))
         if idx % 60 == 0 or idx == len(items):
             print(f"  [{lang}] {idx}/{len(items)} ({time.perf_counter() - t0:.1f}s)")
@@ -625,7 +973,7 @@ def main() -> None:
     if "en" in args.langs:
         build_v1_0_bank("en", build_en_phonemes(), args.en_voice, unit_dur=0.105, speed=1.32, tts_root=args.tts_root)
     if "ja" in args.langs:
-        build_v1_0_bank("ja", build_ja_phonemes(), args.ja_voice, unit_dur=0.092, speed=1.28, tts_root=args.tts_root)
+        build_v1_0_bank("ja", build_ja_phonemes(), args.ja_voice, unit_dur=0.112, speed=1.0, tts_root=args.tts_root)
 
     print(f"\nAll done in {time.perf_counter() - t0:.1f}s!")
 
