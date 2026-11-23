@@ -3,7 +3,7 @@
 [![Code License: MIT](https://img.shields.io/badge/Code-MIT-52B788.svg)](./LICENSE)
 [![Voice Assets: Apache-2.0](https://img.shields.io/badge/Assets-Apache--2.0-EE9B4B.svg)](./THIRD_PARTY_NOTICES.md)
 [![Zero Dependencies](https://img.shields.io/badge/Runtime%20Deps-0-3178C6.svg)](#)
-[![在线预览: clarance.top](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E9%A2%84%E8%A7%88-clarance.top-38BDF8.svg)](https://clarance.top/apps/animalese-voice-mix)
+[![在线预览: clarance.top](https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%E9%A2%84%E8%A7%88-clarance.top-38BDF8.svg)]([https://clarance.top/apps/animalese-voice-mix](https://clarance.top/app-sandbox/animalese-voice-mix/index.html))
 
 
 ## 简介:模仿《动物森友》狸语风格的语音合成算法，轻量，低延迟，流式文本，支持自动识别中/日/英。
